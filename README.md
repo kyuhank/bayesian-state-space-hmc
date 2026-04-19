@@ -13,7 +13,7 @@ This repository does **not** include the manuscript source files.
 
 ## Repository layout
 
-- `analysis/`: scripts for SBC, prior-only runs, and observed-data fits
+- `analysis/`: scripts for SBC and prior-only runs
 - `data/`: input data objects
 - `models/`: Stan model files
 - `results/`: saved outputs used in the study
@@ -39,8 +39,6 @@ The saved results are included, and the main analyses can also be rerun from cod
   - Run the SBC analysis grid via `setup.R`.
 - `make prior-only`
   - Run the prior-only analysis.
-- `make observed-fits`
-  - Run the observed-data albacore fits.
 - `make sensitivity-softmax`
   - Run the four-model `fmax` versus `softmax` sensitivity analysis.
 - `make sensitivity-figures`
@@ -50,7 +48,7 @@ The saved results are included, and the main analyses can also be rerun from cod
 - `make smoke-local`
   - Run a reduced local smoke test.
 - `make rerun-all`
-  - Run SBC, prior-only, observed fits, then rebuild the results manifest.
+  - Run SBC and prior-only analyses, then rebuild the results manifest.
 
 ## Docker
 
@@ -75,7 +73,6 @@ Run the main analyses in Docker:
 ```bash
 make docker-sbc
 make docker-prior-only
-make docker-observed-fits
 make docker-rerun-all
 ```
 
@@ -90,8 +87,6 @@ This gives a more reproducible execution environment than a local run, provided 
 ## Notes
 
 - `fitcsv/` is excluded by default because it is large and can be regenerated locally.
-- Condor-specific configuration files are not included in this repository.
-- Manuscript-specific plotting notebooks are not included in this repository.
 
 ## Suggested archive workflow
 

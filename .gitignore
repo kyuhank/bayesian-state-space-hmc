@@ -6,7 +6,6 @@
 figures_generated/
 fitcsv/
 results/results_manifest.rds
-results/fitcsv_manifest.rds
 *.o
 *.so
 *.dll

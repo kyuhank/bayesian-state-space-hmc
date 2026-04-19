@@ -85,24 +85,9 @@ tau2_prior_from_key() {
 : "${PRIORONLY_SAVE_PLOT_DATA:=true}"
 : "${PRIORONLY_SKIP_PLOTS:=true}"
 
-: "${ALBACOREFITS_MODELS:=$(IFS=,; echo "${smoke_models_array[*]}")}"
-: "${ALBACOREFITS_NCHAINS:=1}"
-: "${ALBACOREFITS_NWARMUP:=50}"
-: "${ALBACOREFITS_NSAMPLE:=100}"
-: "${ALBACOREFITS_ADAPT_DELTA:=0.8}"
-: "${ALBACOREFITS_THIN:=1}"
-: "${ALBACOREFITS_MAX_TREE:=8}"
-: "${ALBACOREFITS_SEED:=123}"
-: "${ALBACOREFITS_SAVE_PLOT_DATA:=true}"
-: "${ALBACOREFITS_INLINE_PLOTS:=false}"
-
 export PRIORONLY_MODELS PRIORONLY_NCHAINS PRIORONLY_NWARMUP PRIORONLY_NSAMPLE
 export PRIORONLY_ADAPT_DELTA PRIORONLY_THIN PRIORONLY_MAX_TREE PRIORONLY_SEED
 export PRIORONLY_N_DRAWS PRIORONLY_N_SIMS PRIORONLY_SAVE_PLOT_DATA PRIORONLY_SKIP_PLOTS
-
-export ALBACOREFITS_MODELS ALBACOREFITS_NCHAINS ALBACOREFITS_NWARMUP ALBACOREFITS_NSAMPLE
-export ALBACOREFITS_ADAPT_DELTA ALBACOREFITS_THIN ALBACOREFITS_MAX_TREE ALBACOREFITS_SEED
-export ALBACOREFITS_SAVE_PLOT_DATA ALBACOREFITS_INLINE_PLOTS
 
 export SBCmodel n_sims nchains nwarmup nsample adaptDelta thin maxTree seed tau2Prior
 
@@ -123,14 +108,7 @@ fi
 echo "[smoke] Running PriorOnly with models: ${PRIORONLY_MODELS}"
 Rscript analysis/PriorOnly.R
 
-echo "[smoke] Running AlbacoreFits with models: ${ALBACOREFITS_MODELS}"
-Rscript -e "source('analysis/AlbacoreFits.R')"
-
 echo "[smoke] Building manifests"
 Rscript scripts/build_results_manifest.R
-Rscript scripts/build_fitcsv_manifest.R
-
-echo "[smoke] Rendering plots/plots.rmd"
-Rscript -e "rmarkdown::render('plot/plots.rmd')"
 
 echo "[smoke] Done"
