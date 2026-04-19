@@ -1,16 +1,17 @@
-.DEFAULT_GOAL := help
+.DEFAULT_GOAL := rerun-all
 
 DOCKER_IMAGE ?= ghcr.io/pacificcommunity/bayes:v1.5
 DOCKER_WORKDIR ?= /work
 
 help:
 	@printf "\nSurplus-SBC-repro targets\n\n"
+	@printf "  make                        Run the full paper workflow sequentially\n"
 	@printf "  make collect-results        Build results/results_manifest.rds from saved SBC outputs\n"
 	@printf "  make sbc                    Run the SBC analysis grid (setup.R)\n"
 	@printf "  make prior-only             Run the prior-only analysis\n"
 	@printf "  make sensitivity-softmax    Run the four-model fmax/softmax sensitivity analysis\n"
 	@printf "  make smoke-local            Run a reduced local smoke test\n"
-	@printf "  make rerun-all              Run SBC and prior-only analyses, then rebuild the manifest\n\n"
+	@printf "  make rerun-all              Run all paper analyses, then rebuild the manifest\n\n"
 	@printf "  make docker-pull            Pull the Docker image used for reproducible runs\n"
 	@printf "  make docker-shell           Open an interactive shell in the Docker image\n"
 	@printf "  make docker-sbc             Run the SBC analysis grid in Docker\n"
@@ -37,8 +38,12 @@ smoke-local:
 	bash scripts/smoke_local.sh
 
 rerun-all:
+	@printf "\n[rerun-all] Running the full paper workflow locally.\n"
+	@printf "[rerun-all] This is a sequential local rerun and can take a long time.\n"
+	@printf "[rerun-all] The original study used HTCondor to run these analyses in parallel.\n\n"
 	$(MAKE) run-sbc
 	$(MAKE) run-prior-only
+	$(MAKE) sensitivity-softmax
 	$(MAKE) collect-results
 
 docker-pull:

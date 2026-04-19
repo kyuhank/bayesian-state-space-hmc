@@ -22,15 +22,21 @@ This repository does **not** include the manuscript source files.
 
 ## Quick start
 
-The saved results are included, and the main analyses can also be rerun from code.
+The saved results used in the study are already included under `results/`. In practice, most users will want to inspect those saved outputs rather than rerun everything locally.
 
-1. Show the available commands:
+1. Show the available commands without starting a rerun:
    - `make help`
-2. Rebuild the results manifest:
+2. Rebuild the results manifest from the saved outputs:
    - `make collect-results`
+3. Run the full paper workflow locally, one step at a time:
+   - `make`
+
+The default `make` target runs the full paper workflow sequentially. This can take a very long time on a local machine.
 
 ## Main make targets
 
+- `make`
+  - Run the full paper workflow locally and sequentially.
 - `make help`
   - Show the available commands.
 - `make collect-results`
@@ -44,7 +50,7 @@ The saved results are included, and the main analyses can also be rerun from cod
 - `make smoke-local`
   - Run a reduced local smoke test.
 - `make rerun-all`
-  - Run SBC and prior-only analyses, then rebuild the results manifest.
+  - Run all paper analyses, then rebuild the results manifest.
 
 ## Docker
 
@@ -82,7 +88,9 @@ This gives a more reproducible execution environment than a local run, provided 
 
 ## Notes
 
+- The original study used `HTCondor` to run analyses in parallel. A local `make` run executes them sequentially and can take a very long time.
 - `fitcsv/` is excluded by default because it is large and can be regenerated locally.
+- Saved outputs used in the study are included under `results/`.
 
 ## Suggested archive workflow
 
