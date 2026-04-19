@@ -28,7 +28,7 @@ The saved results used in the study are already included under `results/`. In pr
    - `make help`
 2. Rebuild the results manifest from the saved outputs:
    - `make collect-results`
-3. Run the full paper workflow locally, one step at a time:
+3. Run the full paper workflow locally:
    - `make`
 
 The default `make` target runs the full paper workflow sequentially. This can take a very long time on a local machine.
