@@ -46,6 +46,7 @@ The default `make` target runs the full paper workflow sequentially. This can ta
     eight main models under `no`, `0.1`, `0.3`, and `0.5`.
 - `make prior-only`
   - Run the independent prior-only comparison for the main eight models.
+    This is the paper-scale prior-only run, not the separate four-model softmax sensitivity check.
 - `make sensitivity-softmax`
   - Run the four-model `fmax` versus `softmax` sensitivity analysis.
 - `make rerun-all`
@@ -88,6 +89,7 @@ This gives a more reproducible execution environment than a local run, provided 
 ## Notes
 
 - The original study used `HTCondor` to run analyses in parallel. A local `make` run executes them sequentially and can take a very long time.
+- The same is true for `make sbc` and `make prior-only` when they are run on their own.
 - `fitcsv/` is excluded by default because it is large and can be regenerated locally.
 - Saved outputs used in the study are included under `results/`.
 

@@ -14,7 +14,7 @@ help:
 	@printf "  make docker-pull            Pull the Docker image used for reproducible runs\n"
 	@printf "  make docker-shell           Open an interactive shell in the Docker image\n"
 	@printf "  make docker-sbc             Run the SBC analysis grid in Docker\n"
-	@printf "  make docker-prior-only      Run the prior-only analysis in Docker\n"
+	@printf "  make docker-prior-only      Run the main eight-model prior-only analysis in Docker\n"
 	@printf "  make docker-rerun-all       Run the full analysis sequence in Docker\n\n"
 
 collect-results:
