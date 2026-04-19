@@ -52,6 +52,41 @@ The saved results are included, and the main analyses can also be rerun from cod
 - `make rerun-all`
   - Run SBC, prior-only, observed fits, then rebuild the results manifest.
 
+## Docker
+
+For a containerised run that matches the software environment used in the original project, use:
+
+- `ghcr.io/pacificcommunity/bayes:v1.5`
+
+Pull the image:
+
+```bash
+docker pull ghcr.io/pacificcommunity/bayes:v1.5
+```
+
+Open an interactive shell in that environment:
+
+```bash
+make docker-shell
+```
+
+Run the main analyses in Docker:
+
+```bash
+make docker-sbc
+make docker-prior-only
+make docker-observed-fits
+make docker-rerun-all
+```
+
+Equivalent direct `docker run` form:
+
+```bash
+docker run --rm -v "$(pwd):/work" -w /work ghcr.io/pacificcommunity/bayes:v1.5 make rerun-all
+```
+
+This gives a more reproducible execution environment than a local run, provided the saved results, input files, and container tag are kept fixed.
+
 ## Notes
 
 - `fitcsv/` is excluded by default because it is large and can be regenerated locally.
