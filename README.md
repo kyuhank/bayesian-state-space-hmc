@@ -1,6 +1,6 @@
 # Surplus-SBC-repro
 
-This repository is provided to support transparency of the methods used in the study and to give other analysts a reproducible code base that can be inspected, rerun, and adapted. It accompanies a study of parameterisation and feasibility treatment in a Bayesian surplus production model fitted with Hamiltonian Monte Carlo.
+This repository is provided to support transparency of the methods used in the study and to give other analysts a reproducible code base that can be inspected, rerun, and adapted. It accompanies the article *Parameterisation and feasibility treatment in a Bayesian stock assessment model fitted with Hamiltonian Monte Carlo*.
 
 This repository contains:
 
