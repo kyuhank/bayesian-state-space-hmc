@@ -3,8 +3,6 @@
 help:
 	@printf "\nSurplus-SBC-repro targets\n\n"
 	@printf "  make collect-results        Build results/results_manifest.rds from saved SBC outputs\n"
-	@printf "  make paper-figures          Rebuild the main paper figures into figures_generated/\n"
-	@printf "  make all-figures            Rebuild the full figure set into figures_generated/\n"
 	@printf "  make sbc                    Run the SBC analysis grid (setup.R)\n"
 	@printf "  make prior-only             Run the prior-only analysis\n"
 	@printf "  make observed-fits          Run the observed-data albacore fits\n"
@@ -12,18 +10,10 @@ help:
 	@printf "  make sensitivity-figures    Export the manuscript-style sensitivity figures\n"
 	@printf "  make sensitivity-trajectory Export the sensitivity trajectory boxplot\n"
 	@printf "  make smoke-local            Run a reduced local smoke test\n"
-	@printf "  make rerun-all              Run SBC, prior-only, observed fits, then rebuild figures\n\n"
+	@printf "  make rerun-all              Run SBC, prior-only, observed fits, then rebuild the manifest\n\n"
 
 collect-results:
 	Rscript scripts/build_results_manifest.R
-
-paper-figures:
-	mkdir -p figures_generated
-	Rscript -e "rmarkdown::render('plot/paper_plots.rmd')"
-
-all-figures:
-	mkdir -p figures_generated
-	Rscript -e "rmarkdown::render('plot/plots.rmd')"
 
 sbc: run-sbc
 
@@ -57,6 +47,5 @@ rerun-all:
 	$(MAKE) run-prior-only
 	$(MAKE) run-observed-fits
 	$(MAKE) collect-results
-	$(MAKE) paper-figures
 
-.PHONY: help collect-results paper-figures all-figures sbc run-sbc prior-only run-prior-only observed-fits run-observed-fits sensitivity-softmax sensitivity-figures sensitivity-trajectory smoke-local rerun-all
+.PHONY: help collect-results sbc run-sbc prior-only run-prior-only observed-fits run-observed-fits sensitivity-softmax sensitivity-figures sensitivity-trajectory smoke-local rerun-all

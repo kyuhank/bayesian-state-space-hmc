@@ -6,8 +6,7 @@ This repository contains:
 
 - analysis scripts
 - Stan model files
-- saved results used in the paper
-- figure-generation scripts
+- saved results used in the study
 - helper utilities
 
 This repository does **not** include the manuscript source files.
@@ -15,43 +14,20 @@ This repository does **not** include the manuscript source files.
 ## Repository layout
 
 - `analysis/`: scripts for SBC, prior-only runs, and observed-data fits
-- `config/`: local and Condor-style run profiles
 - `data/`: input data objects
 - `models/`: Stan model files
-- `plot/`: figure-generation notebooks
-- `results/`: saved outputs used to reproduce the paper figures
-- `scripts/`: helper scripts for manifests and sensitivity-figure export
+- `results/`: saved outputs used in the study
+- `scripts/`: helper scripts for manifests and sensitivity exports
 - `utils/`: shared helper functions
-- `figures_generated/`: output directory for regenerated figures
 
 ## Quick start
 
-The saved results are included, so the paper figures can be rebuilt without rerunning the models.
+The saved results are included, and the main analyses can also be rerun from code.
 
-1. Build the results manifest:
+1. Show the available commands:
+   - `make help`
+2. Rebuild the results manifest:
    - `make collect-results`
-2. Rebuild the paper figures:
-   - `make paper-figures`
-
-Figures will be written to:
-
-- `figures_generated/`
-
-## Full reruns
-
-To rerun the analyses from code:
-
-- SBC grid:
-  - `make sbc`
-- Prior-only analysis:
-  - `make prior-only`
-- Observed-data fits:
-  - `make observed-fits`
-
-After rerunning analyses, rebuild the manifest and figures:
-
-- `make collect-results`
-- `make paper-figures`
 
 ## Main make targets
 
@@ -59,10 +35,6 @@ After rerunning analyses, rebuild the manifest and figures:
   - Show the available commands.
 - `make collect-results`
   - Rebuild `results/results_manifest.rds` from the saved SBC outputs.
-- `make paper-figures`
-  - Rebuild the main figure set used in the paper.
-- `make all-figures`
-  - Rebuild the full figure set from `plot/plots.rmd`.
 - `make sbc`
   - Run the SBC analysis grid via `setup.R`.
 - `make prior-only`
@@ -78,13 +50,13 @@ After rerunning analyses, rebuild the manifest and figures:
 - `make smoke-local`
   - Run a reduced local smoke test.
 - `make rerun-all`
-  - Run SBC, prior-only, observed fits, then rebuild the paper figures.
+  - Run SBC, prior-only, observed fits, then rebuild the results manifest.
 
 ## Notes
 
 - `fitcsv/` is excluded by default because it is large and can be regenerated locally.
-- The workflow was developed in the same software environment used for the paper repository.
-- The original project used the Docker image `ghcr.io/pacificcommunity/bayes:v1.5` for containerised runs.
+- Condor-specific configuration files are not included in this repository.
+- Manuscript-specific plotting notebooks are not included in this repository.
 
 ## Suggested archive workflow
 

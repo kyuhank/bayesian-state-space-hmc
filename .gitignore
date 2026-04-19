@@ -4,9 +4,6 @@
 .Ruserdata
 .vscode/
 figures_generated/
-plot/Figures/
-plot/*.html
-plot/Rplots.pdf
 fitcsv/
 results/results_manifest.rds
 results/fitcsv_manifest.rds
