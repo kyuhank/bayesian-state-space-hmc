@@ -42,16 +42,43 @@ Figures will be written to:
 To rerun the analyses from code:
 
 - SBC grid:
-  - `make run-sbc`
+  - `make sbc`
 - Prior-only analysis:
-  - `make run-prior-only`
+  - `make prior-only`
 - Observed-data fits:
-  - `make run-observed-fits`
+  - `make observed-fits`
 
 After rerunning analyses, rebuild the manifest and figures:
 
 - `make collect-results`
 - `make paper-figures`
+
+## Main make targets
+
+- `make help`
+  - Show the available commands.
+- `make collect-results`
+  - Rebuild `results/results_manifest.rds` from the saved SBC outputs.
+- `make paper-figures`
+  - Rebuild the main figure set used in the paper.
+- `make all-figures`
+  - Rebuild the full figure set from `plot/plots.rmd`.
+- `make sbc`
+  - Run the SBC analysis grid via `setup.R`.
+- `make prior-only`
+  - Run the prior-only analysis.
+- `make observed-fits`
+  - Run the observed-data albacore fits.
+- `make sensitivity-softmax`
+  - Run the four-model `fmax` versus `softmax` sensitivity analysis.
+- `make sensitivity-figures`
+  - Export the manuscript-style sensitivity figures.
+- `make sensitivity-trajectory`
+  - Export the sensitivity trajectory boxplot.
+- `make smoke-local`
+  - Run a reduced local smoke test.
+- `make rerun-all`
+  - Run SBC, prior-only, observed fits, then rebuild the paper figures.
 
 ## Notes
 
@@ -66,4 +93,3 @@ For publication:
 1. Push this repository to GitHub.
 2. Create a tagged release.
 3. Archive that release in Zenodo.
-
