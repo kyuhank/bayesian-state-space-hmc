@@ -44,6 +44,8 @@ The default `make` target runs the full paper workflow sequentially. This can ta
 - `make sbc`
   - Run the full SBC grid used in the study:
     eight main models under `no`, `0.1`, `0.3`, and `0.5`.
+    Internally this calls `scripts/run_sbc_grid.sh`, which loops over
+    configurations and runs `setup.R` once per configuration.
 - `make prior-only`
   - Run the independent prior-only comparison for the main eight models.
     This is the paper-scale prior-only run, not the separate four-model softmax sensitivity check.

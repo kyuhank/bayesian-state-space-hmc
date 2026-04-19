@@ -1,3 +1,15 @@
+## ------------------------------------------------------------
+## setup.R is a single-configuration SBC worker.
+##
+## It runs one model / one CV setting / one adapt_delta setting
+## at a time, using environment variables for configuration.
+##
+## The full paper SBC grid is launched by:
+##   bash scripts/run_sbc_grid.sh
+## or equivalently:
+##   make sbc
+## ------------------------------------------------------------
+
 library(posterior)
 library(bayesplot)
 library(cmdstanr)
