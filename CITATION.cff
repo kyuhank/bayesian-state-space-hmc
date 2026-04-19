@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use this repository, please cite the software and the associated article."
+title: "Surplus-SBC-repro"
+type: software
+version: "0.1.0"
+date-released: 2026-04-20
+license: MIT
+authors:
+  - family-names: "Kim"
+    given-names: "Kyuhan"
+    email: "kyuhank@spc.int"
+    affiliation: "Pacific Community"
+abstract: >-
+  Reproducibility repository for a study of parameterisation and feasibility
+  treatment in a Bayesian surplus production model fitted with Hamiltonian
+  Monte Carlo.
+keywords:
+  - fisheries stock assessment
+  - state-space model
+  - surplus production model
+  - Hamiltonian Monte Carlo
+  - simulation-based calibration
+repository-code: "https://github.com/kyuhank/Surplus-SBC-repro"

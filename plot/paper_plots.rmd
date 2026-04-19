@@ -1,0 +1,2623 @@
+---
+title: "Paper plots"
+author: "Prenom:Kyuhan, nom:Kim"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::downcute:
+    self_contained: yes
+    thumbnails: false
+    lightbox: true
+    gallery: false
+    highlight: tango
+    code_folding: hide
+    fig_width: 10
+    fig_height: 8
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  dev = "png",
+  dpi = 160,
+  echo = FALSE,
+  cache = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.path = "Figures/"
+)
+
+library(ggplot2)
+library(cowplot)
+library(dplyr)
+library(patchwork)
+library(SBC)
+library(purrr)
+library(scales)
+library(stringr)
+
+theme_set(theme_cowplot())
+
+source("../data/Albacore_Data.R")
+source("../utils/pipeline_utils.R")
+source("../utils/simulation.R")
+source("../utils/sbc_utils.R")
+source("../utils/helpers.R")
+
+manifest_file <- "../results/results_manifest.rds"
+files <- list.files("../results", pattern = "^sbc_.*\\.(rds|RData)$", full.names = TRUE)
+
+all_results <- list()
+all_nsamples <- list()
+all_nchains <- list()
+
+if (file.exists(manifest_file)) {
+  manifest <- readRDS(manifest_file)
+  for (name in names(manifest)) {
+    entry <- manifest[[name]]
+    all_results[[name]] <- entry$results
+    all_nsamples[[name]] <- entry$metadata$nsample
+    all_nchains[[name]] <- entry$metadata$nchains
+  }
+} else {
+  for (f in files) {
+    entry <- read_sbc_result_file(f)
+    name <- entry$name
+    all_results[[name]] <- entry$results
+    all_nsamples[[name]] <- entry$metadata$nsample
+    all_nchains[[name]] <- entry$metadata$nchains
+  }
+}
+
+has_sbc_results <- length(all_results) > 0
+
+require_sbc_diag_column <- function(result, result_name, table_name, column_name) {
+  diag_tbl <- result[[table_name]]
+  if (is.null(diag_tbl)) {
+    stop(sprintf(
+      "Missing SBC diagnostics table '%s' for result '%s'.",
+      table_name, result_name
+    ))
+  }
+  if (!column_name %in% names(diag_tbl)) {
+    stop(sprintf(
+      "Missing SBC diagnostics column '%s' in '%s' for result '%s'. Available columns: %s",
+      column_name, table_name, result_name, paste(names(diag_tbl), collapse = ", ")
+    ))
+  }
+  diag_tbl[[column_name]]
+}
+
+validate_sbc_diagnostics <- function(results_list) {
+  if (length(results_list) == 0) return(invisible(NULL))
+  invisible(imap(results_list, function(result, result_name) {
+    require_sbc_diag_column(result, result_name, "backend_diagnostics", "n_divergent")
+    require_sbc_diag_column(result, result_name, "backend_diagnostics", "n_max_treedepth")
+    require_sbc_diag_column(result, result_name, "backend_diagnostics", "max_chain_time")
+    require_sbc_diag_column(result, result_name, "default_diagnostics", "min_ess_bulk")
+    require_sbc_diag_column(result, result_name, "default_diagnostics", "max_rhat")
+    TRUE
+  }))
+}
+
+manuscript_fig_dir <- "../figures_generated"
+dir.create(manuscript_fig_dir, recursive = TRUE, showWarnings = FALSE)
+
+save_manuscript_plot <- function(plot_obj, filename, width = 10, height = 8, dpi = 300) {
+  if (is.null(plot_obj)) return(invisible(NULL))
+  if (inherits(plot_obj, "ggplot")) {
+    plot_obj <- plot_obj +
+      labs(title = NULL, subtitle = NULL) +
+      theme(plot.title = element_blank(), plot.subtitle = element_blank())
+  }
+  ggsave(
+    filename = file.path(manuscript_fig_dir, filename),
+    plot = plot_obj,
+    width = width,
+    height = height,
+    dpi = dpi,
+    limitsize = FALSE,
+    bg = "white"
+  )
+  invisible(plot_obj)
+}
+
+save_plot_grid <- function(plot_list, filename, ncol = 1, width = 12, height = 8, labels = NULL) {
+  plot_list <- Filter(Negate(is.null), plot_list)
+  if (length(plot_list) == 0) return(invisible(NULL))
+  p <- cowplot::plot_grid(plotlist = plot_list, ncol = ncol, labels = labels)
+  save_manuscript_plot(p, filename, width = width, height = height)
+  invisible(p)
+}
+
+save_shared_legend_plot_grid <- function(plot_list, filename, ncol = 2, width = 16, height = 12) {
+  plot_list <- Filter(Negate(is.null), plot_list)
+  if (length(plot_list) == 0) return(invisible(NULL))
+
+  plot_titles <- names(plot_list)
+  if (is.null(plot_titles)) {
+    plot_titles <- rep("", length(plot_list))
+  }
+
+  legend <- cowplot::get_legend(
+    plot_list[[1]] +
+      theme(
+        legend.position = "bottom",
+        legend.box.margin = margin(t = 2, r = 2, b = 2, l = 2)
+      )
+  )
+
+  n_plots <- length(plot_list)
+  nrow <- ceiling(n_plots / ncol)
+  plot_list_trimmed <- lapply(seq_along(plot_list), function(i) {
+    row_idx <- ceiling(i / ncol)
+    col_idx <- ((i - 1) %% ncol) + 1
+    p <- plot_list[[i]] +
+      theme(
+        legend.position = "none",
+        plot.margin = margin(4, 6, 4, 6)
+      )
+    if (row_idx < nrow) {
+      p <- p + theme(axis.title.x = element_blank())
+    }
+    if (col_idx > 1) {
+      p <- p + theme(axis.title.y = element_blank())
+    }
+
+    model_title <- ggplot() +
+      annotate("rect", xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf,
+               fill = "#D9D9D9", color = "#555555", linewidth = 0.6) +
+      annotate("text", x = 0.5, y = 0.5, label = plot_titles[[i]],
+               fontface = "bold", size = 4.5) +
+      coord_cartesian(xlim = c(0, 1), ylim = c(0, 1), expand = FALSE) +
+      theme_void()
+
+    framed_plot <- p +
+      theme(
+        plot.background = element_rect(color = "#666666", fill = "white", linewidth = 0.6)
+      )
+
+    cowplot::plot_grid(
+      model_title,
+      framed_plot,
+      ncol = 1,
+      rel_heights = c(0.085, 0.915)
+    )
+  })
+
+  grid <- cowplot::plot_grid(plotlist = plot_list_trimmed, ncol = ncol, align = "hv")
+  combined <- cowplot::plot_grid(
+    grid,
+    legend,
+    ncol = 1,
+    rel_heights = c(1, 0.08)
+  )
+  save_manuscript_plot(combined, filename, width = width, height = height)
+  invisible(combined)
+}
+
+panel_slug <- function(x) {
+  x <- as.character(x)
+  x <- gsub("\\s+", "_", x)
+  x <- gsub("[^A-Za-z0-9_\\.-]+", "", x)
+  tolower(x)
+}
+
+param_label_parse <- function(x) {
+  vapply(x, format_parameter_label_plotmath, character(1))
+}
+
+save_plot_list_panels <- function(plot_list, prefix, width = 10, height = 8) {
+  if (length(plot_list) == 0) return(invisible(NULL))
+  nm <- names(plot_list)
+  if (is.null(nm)) nm <- seq_along(plot_list)
+  for (i in seq_along(plot_list)) {
+    p <- plot_list[[i]]
+    if (is.null(p)) next
+    file_nm <- sprintf("%s__%s.png", prefix, panel_slug(nm[[i]]))
+    save_manuscript_plot(p, file_nm, width = width, height = height)
+  }
+  invisible(NULL)
+}
+
+grid_layout_dims <- function(n_panels, panel_w = 6.0, panel_h = 4.0, max_cols = 2, max_h = 14) {
+  if (n_panels <= 0) return(list(ncol = 1L, width = 12, height = 8))
+  ncol <- min(max_cols, n_panels)
+  nrow <- ceiling(n_panels / ncol)
+  width <- panel_w * ncol
+  height <- min(max_h, max(4, panel_h * nrow))
+  list(ncol = ncol, width = width, height = height)
+}
+
+paper_theme <- function(base_size = 13) {
+  theme_minimal(base_size = base_size) +
+    theme(
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(color = "grey88", linewidth = 0.3),
+      strip.text = element_text(face = "bold", size = base_size + 1),
+      strip.background = element_rect(fill = "grey95", color = "grey70", linewidth = 0.3),
+      legend.position = "bottom",
+      legend.title = element_text(face = "bold", size = base_size + 1),
+      legend.text = element_text(size = base_size),
+      plot.title = element_text(face = "bold", size = base_size + 2),
+      plot.title.position = "plot",
+      axis.title = element_text(size = base_size + 2),
+      axis.text = element_text(size = base_size),
+      panel.spacing = grid::unit(0.8, "lines")
+    )
+}
+
+add_sbc_model_cv_groups <- function(df, model_col = "model_name") {
+  raw_vals <- as.character(df[[model_col]])
+  compact_labels <- vapply(raw_vals, format_sbc_run_label, character(1))
+  m <- stringr::str_match(compact_labels, "^(.*)_(cv[^_]+|no)$")
+  model_group <- ifelse(is.na(m[, 2]), compact_labels, m[, 2])
+  cv_group <- ifelse(is.na(m[, 3]), "unknown", m[, 3])
+
+  cv_levels <- c("no", "cv0.1", "cv0.3", "cv0.5", sort(unique(cv_group)))
+  cv_levels <- unique(cv_levels)
+  cv_levels <- cv_levels[cv_levels %in% unique(cv_group)]
+
+  model_group_pretty <- gsub("_", " ", model_group, fixed = TRUE)
+  mm <- stringr::str_match(model_group_pretty, "^(ct|nct)\\s+(.+)$")
+  family_vals <- ifelse(is.na(mm[, 3]), model_group_pretty, mm[, 3])
+  family_priority <- c("fmax", "if", "soft", "soft2")
+  family_levels <- c(
+    intersect(family_priority, unique(family_vals)),
+    setdiff(unique(family_vals), family_priority)
+  )
+  model_levels_ct <- character(0)
+  model_levels_nct <- character(0)
+  for (fam in family_levels) {
+    ct_label <- paste("ct", fam)
+    nct_label <- paste("nct", fam)
+    if (ct_label %in% model_group_pretty) model_levels_ct <- c(model_levels_ct, ct_label)
+    if (nct_label %in% model_group_pretty) model_levels_nct <- c(model_levels_nct, nct_label)
+  }
+  model_levels <- unique(c(model_levels_ct, model_levels_nct, unique(model_group_pretty)))
+
+  df$model_group <- factor(model_group_pretty, levels = model_levels)
+  df$cv_group <- factor(cv_group, levels = cv_levels)
+  df
+}
+
+paper_cv_labeller <- labeller(cv_group = as_labeller(c(
+  "no" = "No obs. info",
+  "cv0.1" = "CV=0.1",
+  "cv0.3" = "CV=0.3",
+  "cv0.5" = "CV=0.5"
+)))
+
+format_cv_label <- function(x) {
+  x_chr <- as.character(x)
+  dplyr::case_when(
+    x_chr == "no" ~ "No obs. info",
+    grepl("^cv", x_chr) ~ paste0("CV=", sub("^cv", "", x_chr)),
+    TRUE ~ x_chr
+  )
+}
+
+save_sbc_perf_panel_plots <- function(
+    plot_data,
+    x_col,
+    prefix,
+    x_label,
+    x_scale = NULL,
+    x_vline = NULL,
+    bins = 25,
+    angle_x = FALSE) {
+  groups <- levels(plot_data$model_group)
+  groups <- groups[groups %in% unique(as.character(plot_data$model_group))]
+  cv_vals <- unique(as.character(plot_data$cv_group))
+  cv_vals <- cv_vals[!is.na(cv_vals)]
+  for (grp in groups) {
+    for (cv in cv_vals) {
+      dd <- dplyr::filter(plot_data, model_group == grp, as.character(cv_group) == cv)
+      if (nrow(dd) == 0) next
+      p <- ggplot(dd, aes(x = .data[[x_col]])) +
+        geom_histogram(bins = bins, fill = "#2F7F95", alpha = 0.75) +
+        labs(x = x_label, y = "Frequency") +
+        paper_theme() +
+        theme(
+          legend.position = "none",
+          plot.title = element_blank(),
+          strip.background = element_blank(),
+          strip.text = element_blank(),
+          axis.text.x = element_text(size = 11),
+          axis.text.y = element_text(size = 11),
+          axis.title.x = element_text(size = 12),
+          axis.title.y = element_text(size = 12)
+        )
+      if (!is.null(x_scale)) p <- p + x_scale
+      if (!is.null(x_vline)) p <- p + geom_vline(xintercept = x_vline, linetype = "dashed")
+      if (isTRUE(angle_x)) p <- p + theme(axis.text.x = element_text(angle = 35, hjust = 1))
+      save_manuscript_plot(
+        p,
+        sprintf("%s__%s__cv_%s.png", prefix, panel_slug(grp), panel_slug(cv)),
+        width = 7,
+        height = 4.5
+      )
+    }
+  }
+  invisible(NULL)
+}
+
+if (has_sbc_results) {
+  validate_sbc_diagnostics(all_results)
+}
+
+list_plot_rds <- function(dir_path, pattern) {
+  if (!dir.exists(dir_path)) return(character())
+  files <- list.files(dir_path, pattern = pattern, full.names = TRUE)
+  if (length(files) == 0) return(character())
+  info <- file.info(files)
+  files[order(info$mtime, decreasing = TRUE)]
+}
+
+prior_only_rds_files <- list_plot_rds("../results/prior_only", "^prior_only_plot_data_.*\\.rds$")
+albacore_rds_files <- list_plot_rds("../results/albacore_fits", "^albacore_fits_plot_data_.*\\.rds$")
+
+keep_run <- function(run_name) {
+  !grepl("_no$", format_sbc_run_label(run_name))
+}
+
+paper_results <- all_results[vapply(names(all_results), keep_run, logical(1))]
+paper_nsamples <- all_nsamples[names(paper_results)]
+paper_nchains <- all_nchains[names(paper_results)]
+has_paper_sbc_results <- length(paper_results) > 0
+
+parse_sbc_stem <- function(x) {
+  m <- stringr::str_match(x, "^(?:sbc_|\\w*SBC(?:dep)?_)?(.+?)\\.stan_([^_]+)_([^_]+)_.+$")
+  data.frame(
+    run_id = x,
+    model_key = ifelse(is.na(m[, 2]), x, m[, 2]),
+    adapt_key = ifelse(is.na(m[, 3]), NA_character_, m[, 3]),
+    cv_key = ifelse(is.na(m[, 4]), NA_character_, m[, 4]),
+    stringsAsFactors = FALSE
+  )
+}
+
+paper_model_groups <- list()
+if (has_paper_sbc_results) {
+  parsed <- parse_sbc_stem(names(paper_results))
+  paper_model_groups <- split(parsed$run_id, parsed$model_key)
+}
+```
+
+# SBC truth-simulation workflow
+
+```{r paper_sbc_truth_workflow, echo=FALSE, message=FALSE, fig.dim=c(13.5,5.8)}
+workflow_boxes <- tibble::tribble(
+  ~xmin, ~xmax, ~ymin, ~ymax, ~fill,      ~label,
+  0.40,  3.82,  2.20,  3.08,  "#DCEAF7",  "1. Draw from Prior\nK, r, q, σ², τ²",
+  4.05,  7.78,  2.20,  3.08,  "#E6F4DE",  "2. Simulate Dataset\nR model: feasible truth\n+ abundance index",
+  8.00,  11.48, 2.20,  3.08,  "#F9E8D5",  "3. Fit Model Variants\n8 variants",
+  11.72, 15.38, 2.20,  3.08,  "#F6DEE8",  "4. Summarise SBC ranks\nECDF +\nHMC diagnostics"
+)
+
+workflow_arrows <- tibble::tribble(
+  ~x,   ~xend, ~y,  ~yend,
+  3.82, 4.05,  2.62, 2.62,
+  7.78, 8.00,  2.62, 2.62,
+  11.48, 11.72, 2.62, 2.62
+)
+
+p_workflow <- ggplot() +
+  geom_rect(
+    data = workflow_boxes,
+    aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+    fill = workflow_boxes$fill,
+    colour = "grey35",
+    linewidth = 0.4
+  ) +
+  geom_segment(
+    data = workflow_arrows,
+    aes(x = x, xend = xend, y = y, yend = yend),
+    arrow = arrow(length = unit(0.18, "inches"), type = "closed"),
+    linewidth = 0.5,
+    colour = "grey30"
+  ) +
+  geom_text(
+    data = workflow_boxes,
+    aes(x = (xmin + xmax) / 2, y = (ymin + ymax) / 2, label = label),
+    parse = FALSE,
+    size = 4.8,
+    lineheight = 1.02,
+    family = "",
+    fontface = "plain"
+  ) +
+  annotate(
+    "segment",
+    x = 0.40, xend = 7.78, y = 3.34, yend = 3.34,
+    linewidth = 0.7,
+    colour = "grey35"
+  ) +
+  annotate(
+    "segment",
+    x = 0.40, xend = 0.40, y = 3.34, yend = 3.22,
+    linewidth = 0.7,
+    colour = "grey35"
+  ) +
+  annotate(
+    "segment",
+    x = 7.78, xend = 7.78, y = 3.34, yend = 3.22,
+    linewidth = 0.7,
+    colour = "grey35"
+  ) +
+  annotate(
+    "text",
+    x = 4.0, y = 3.48,
+    label = "Simulation using a generative model in R",
+    size = 5.0,
+    colour = "grey25"
+  ) +
+  annotate(
+    "segment",
+    x = 0.40, xend = 11.48, y = 1.96, yend = 1.96,
+    linewidth = 0.7,
+    colour = "grey35"
+  ) +
+  annotate(
+    "segment",
+    x = 0.40, xend = 0.40, y = 1.96, yend = 2.08,
+    linewidth = 0.7,
+    colour = "grey35"
+  ) +
+  annotate(
+    "segment",
+    x = 11.48, xend = 11.48, y = 1.96, yend = 2.08,
+    linewidth = 0.7,
+    colour = "grey35"
+  ) +
+  annotate(
+    "text",
+    x = 5.85, y = 1.78,
+    label = "Repeat 2000 times",
+    size = 4.8,
+    colour = "grey25"
+  ) +
+  coord_cartesian(xlim = c(0.22, 15.50), ylim = c(1.66, 3.62), clip = "off") +
+  labs(
+    x = NULL,
+    y = NULL
+  ) +
+  theme_void(base_size = 13.5) +
+  theme()
+
+print(p_workflow)
+save_manuscript_plot(p_workflow, "paper_sbc_truth_workflow.png", width = 15.7, height = 5.7)
+```
+
+```{r paper_constraint_mechanisms_actual, echo=FALSE, message=FALSE, fig.dim=c(13.5,6.0)}
+bound <- 1
+soft_clip <- 0.99 * bound
+smoothness <- 50
+eps <- 1e-4
+
+catch_x <- seq(0, 1.6, length.out = 1200)
+
+hard_if_df <- tibble::tibble(
+  x = c(catch_x[catch_x <= bound], bound, catch_x[catch_x > bound]),
+  y = c(catch_x[catch_x <= bound], soft_clip, rep(soft_clip, sum(catch_x > bound))),
+  curve = "Hard clip (`if`)"
+)
+
+catch_df <- tibble::tibble(
+  x = catch_x
+) |>
+  mutate(
+    x_safe = pmax(x, 1e-8),
+    soft_logmin = exp(-(log(exp(-smoothness * log(x_safe)) +
+                              exp(-smoothness * log(soft_clip)))) / smoothness),
+    boundary = soft_clip
+  ) |>
+  select(-x_safe) |>
+  tidyr::pivot_longer(
+    cols = c(soft_logmin, boundary),
+    names_to = "curve",
+    values_to = "y"
+  ) |>
+  mutate(
+    curve = recode(
+      curve,
+      soft_logmin = "Soft log-min (`soft`)",
+      boundary = "Feasible limit"
+    )
+  ) |>
+  bind_rows(hard_if_df)
+
+biomass_df <- tibble::tibble(
+  x = seq(-0.08, 0.25, length.out = 500)
+) |>
+  mutate(
+    raw = if_else(x >= 0, x, NA_real_),
+    hard_fmax = pmax(x, eps),
+    softplus = log1p(exp(smoothness * x)) / smoothness + eps
+  ) |>
+  tidyr::pivot_longer(
+    cols = c(raw, hard_fmax, softplus),
+    names_to = "curve",
+    values_to = "y"
+  ) |>
+  mutate(
+    curve = recode(
+      curve,
+      raw = "Unconstrained update",
+      hard_fmax = "Hard floor (`fmax`)",
+      softplus = "Softplus floor (`soft`, `soft2`)"
+    )
+  )
+
+penalty_df <- tibble::tibble(
+  x = seq(-0.12, 0.12, length.out = 500)
+) |>
+  mutate(
+    excess = log1p(exp(smoothness * x)) / smoothness,
+    soft_penalty = (excess / 0.01)^2 / 2
+  ) |>
+  tidyr::pivot_longer(
+    cols = c(soft_penalty),
+    names_to = "curve",
+    values_to = "y"
+  ) |>
+  mutate(curve = "Soft penalty (`soft2`)") 
+
+boundary_line_color <- "#D95F02"
+boundary_text_color <- "#A64B00"
+boundary_line_type <- "dashed"
+boundary_line_width <- 0.8
+
+soft_catch_at_1p08 <- exp(-(log(exp(-smoothness * log(1.08)) +
+                                  exp(-smoothness * log(soft_clip)))) / smoothness)
+soft_catch_at_1p10 <- exp(-(log(exp(-smoothness * log(1.10)) +
+                                  exp(-smoothness * log(soft_clip)))) / smoothness)
+soft_floor_at_0p02 <- log1p(exp(smoothness * 0.020)) / smoothness + eps
+soft_floor_at_0p03 <- log1p(exp(smoothness * 0.030)) / smoothness + eps
+soft_penalty_at_0p015 <- ((log1p(exp(smoothness * 0.015)) / smoothness) / 0.01)^2 / 2
+soft_penalty_at_0p020 <- ((log1p(exp(smoothness * 0.020)) / smoothness) / 0.01)^2 / 2
+
+constraint_colors <- c(
+  "Hard clip (`if`)" = "#D95F02",
+  "Soft log-min (`soft`)" = "#1B9E77",
+  "Feasible limit" = "#6B6B6B",
+  "Unconstrained update" = "#6B6B6B",
+  "Hard floor (`fmax`)" = "#D95F02",
+  "Softplus floor (`soft`, `soft2`)" = "#1B9E77",
+  "Soft penalty (`soft2`)" = "#1B9E77"
+)
+
+constraint_ltys <- c(
+  "Hard clip (`if`)" = "solid",
+  "Soft log-min (`soft`)" = "solid",
+  "Feasible limit" = "dashed",
+  "Unconstrained update" = "solid",
+  "Hard floor (`fmax`)" = "solid",
+  "Softplus floor (`soft`, `soft2`)" = "solid",
+  "Soft penalty (`soft2`)" = "solid"
+)
+
+p_catch_base <- ggplot(
+  catch_df |> filter(curve != "Feasible limit"),
+  aes(x = x, y = y, color = curve, linetype = curve)
+) +
+  annotate("rect", xmin = bound, xmax = 1.6, ymin = -Inf, ymax = Inf,
+           fill = "#FDE2D5", alpha = 0.45) +
+  annotate("text", x = 1.10, y = 0.835, label = "Observed catch > limit",
+           color = boundary_text_color, size = 4.45, hjust = 0) +
+  geom_line(linewidth = 1.15) +
+  annotate("segment", x = 0.79, xend = 1.6, y = soft_clip, yend = soft_clip,
+           color = "grey10", linetype = "dotted", linewidth = 1.05, alpha = 1) +
+  annotate("text", x = 0.805, y = soft_clip + 0.0075, label = "Clipped at\n0.99",
+           color = "grey10", size = 4.05, hjust = 0, vjust = 0, lineheight = 0.9) +
+  annotate("curve", x = 1.04, y = 1.024, xend = 1.01, yend = soft_clip + 0.003,
+           curvature = 0.14, arrow = arrow(length = unit(0.015, "npc")),
+           color = "#D95F02", linewidth = 0.9) +
+  annotate("text", x = 1.06, y = 1.022, label = "Hard clip\n(discontinuous jump)",
+           color = "#D95F02", hjust = 0, vjust = 1, size = 4.35, lineheight = 0.95) +
+  annotate("curve", x = 1.15, y = 0.868, xend = 1.10, yend = soft_catch_at_1p10 - 0.004,
+           curvature = -0.18, arrow = arrow(length = unit(0.015, "npc")),
+           color = "#1B9E77", linewidth = 0.9) +
+  annotate("text", x = 1.18, y = 0.868, label = "Smooth approach",
+           color = "#1B9E77", hjust = 0, size = 4.35) +
+  labs(
+    title = "A. Effective catch",
+    x = "Observed catch / feasible limit",
+    y = "Effective catch / feasible limit"
+  ) +
+  scale_color_manual(values = constraint_colors, breaks = c("Hard clip (`if`)", "Soft log-min (`soft`)")) +
+  scale_linetype_manual(values = constraint_ltys, breaks = c("Hard clip (`if`)", "Soft log-min (`soft`)")) +
+  coord_cartesian(xlim = c(0.79, 1.6), ylim = c(0.8, 1.06), clip = "on") +
+  paper_theme(14.5) +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(size = 15, face = "bold"),
+    plot.margin = margin(8, 24, 8, 8)
+  )
+
+p_catch <- p_catch_base
+
+p_biomass <- ggplot(
+  biomass_df |> filter(curve != "Unconstrained update"),
+  aes(x = x, y = y, color = curve, linetype = curve)
+) +
+  annotate("rect", xmin = -0.08, xmax = 0, ymin = -Inf, ymax = Inf,
+           fill = "#FDE2D5", alpha = 0.45) +
+  annotate("text", x = -0.040, y = 0.19, label = "Pre-floor update < 0",
+           color = boundary_text_color, size = 4.25, angle = 90,
+           hjust = 0.5, vjust = 0.5) +
+  geom_line(linewidth = 1.15) +
+  annotate("curve", x = 0.090, y = 0.030, xend = 0.004, yend = eps,
+           curvature = -0.30, arrow = arrow(length = unit(0.015, "npc")),
+           color = "#D95F02", linewidth = 0.9) +
+  annotate("text", x = 0.098, y = 0.030, label = "Hard floor",
+           color = "#D95F02", hjust = 0, size = 4.35) +
+  annotate("curve", x = 0.080, y = 0.148, xend = 0.030,
+           yend = soft_floor_at_0p03 + 0.006,
+           curvature = 0.18, arrow = arrow(length = unit(0.015, "npc")),
+           color = "#1B9E77", linewidth = 0.9) +
+  annotate("text", x = 0.088, y = 0.148, label = "Smooth floor",
+           color = "#1B9E77", hjust = 0, size = 4.35) +
+  labs(
+    title = "B. Relative biomass floor",
+    x = "Pre-floor next-step relative biomass",
+    y = "Adjusted next-step\nrelative biomass"
+  ) +
+  scale_color_manual(values = constraint_colors, breaks = c("Hard floor (`fmax`)", "Softplus floor (`soft`, `soft2`)")) +
+  scale_linetype_manual(values = constraint_ltys, breaks = c("Hard floor (`fmax`)", "Softplus floor (`soft`, `soft2`)")) +
+  coord_cartesian(xlim = c(-0.08, 0.25), ylim = c(0, 0.28), clip = "off") +
+  paper_theme(14.5) +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(size = 15, face = "bold"),
+    plot.margin = margin(8, 18, 8, 8)
+  )
+
+p_penalty <- ggplot(penalty_df, aes(x = x, y = y, color = curve, linetype = curve)) +
+  annotate("rect", xmin = 0, xmax = 0.12, ymin = -Inf, ymax = Inf,
+           fill = "#FDE2D5", alpha = 0.45) +
+  geom_line(linewidth = 1.15) +
+  annotate("text", x = 0.060, y = 56, label = "Harvest rate > threshold",
+           color = boundary_text_color, size = 4.15, angle = 90,
+           hjust = 0.5, vjust = 0.5) +
+  annotate("curve", x = 0.022, y = 22, xend = 0.020, yend = soft_penalty_at_0p020 + 1.2,
+           curvature = -0.18, arrow = arrow(length = unit(0.015, "npc")),
+           color = "#1B9E77", linewidth = 0.9) +
+  annotate("text", x = 0.022, y = 23, label = "Smooth increase",
+           color = "#1B9E77", hjust = 0, size = 4.35) +
+  labs(title = "C. Harvest-rate excess", x = expression(H[t] - H[max]), y = "Penalty term") +
+  scale_color_manual(values = constraint_colors, breaks = "Soft penalty (`soft2`)") +
+  scale_linetype_manual(values = constraint_ltys, breaks = "Soft penalty (`soft2`)") +
+  coord_cartesian(xlim = c(-0.11, 0.115), ylim = c(0, 75), clip = "off") +
+  paper_theme(14.5) +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(size = 15, face = "bold"),
+    plot.margin = margin(8, 24, 8, 8)
+  )
+
+panel_row <- cowplot::plot_grid(
+  p_catch, p_biomass, p_penalty,
+  nrow = 1,
+  align = "h",
+  rel_widths = c(1.15, 1, 1)
+)
+
+p_constraints <- panel_row
+
+save_manuscript_plot(
+  p_constraints,
+  "constraint_mechanisms_actual_models.png",
+  width = 15.8,
+  height = 6.2
+)
+
+print(p_constraints)
+```
+
+```{r paper_ct_nct_schematic, echo=FALSE, message=FALSE, warning=FALSE}
+box_df_ct <- tibble(
+  xmin = c(0.08, 0.60),
+  xmax = c(0.40, 0.92),
+  ymin = c(0.28, 0.28),
+  ymax = c(0.70, 0.70),
+  fill = c("#DCE9F7", "#E6F3DA"),
+  title = c("Median state after\nfeasibility step", "Next-state draw"),
+  body = c("P[t+1]^med", "P[t+1]")
+)
+
+p_ct <- ggplot() +
+  annotate("rect", xmin = 0, xmax = 1, ymin = 0, ymax = 1, fill = "white", alpha = 1) +
+  geom_rect(data = box_df_ct, aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = fill),
+            color = "#5B5B5B", linewidth = 0.6, show.legend = FALSE) +
+  scale_fill_identity() +
+  annotate("text", x = 0.02, y = 0.98, label = "A. Centred", hjust = 0, vjust = 1, size = 7.0, fontface = "bold") +
+  annotate("text", x = 0.50, y = 0.84, label = "Draw the next biomass state directly.", size = 5.2) +
+  annotate("text", x = c(0.24, 0.76), y = 0.60,
+           label = c("Median state after\nfeasibility step", "Next-state\ndraw"),
+           size = 4.2, lineheight = 1.0) +
+  annotate("text", x = 0.24, y = 0.42, label = "P[t+1]^med", parse = TRUE, size = 5.8) +
+  annotate("text", x = 0.76, y = 0.42, label = "P[t+1]", parse = TRUE, size = 5.8) +
+  annotate("segment", x = 0.40, xend = 0.60, y = 0.49, yend = 0.49,
+           arrow = arrow(length = unit(0.015, "npc")), linewidth = 0.7) +
+  annotate("text", x = 0.50, y = 0.16, label = "The feasibility adjustment enters the draw directly.", size = 4.95) +
+  coord_cartesian(xlim = c(0, 1), ylim = c(0, 1), clip = "off") +
+  theme_void() +
+  theme(plot.margin = margin(4, 6, 4, 6), plot.background = element_rect(fill = "white", color = NA))
+
+box_df_nct <- tibble(
+  xmin = c(0.02, 0.34, 0.66),
+  xmax = c(0.30, 0.62, 0.98),
+  ymin = c(0.28, 0.28, 0.28),
+  ymax = c(0.70, 0.70, 0.70),
+  fill = c("#DCE9F7", "#FDE2D5", "#E6F3DA")
+)
+
+p_nct <- ggplot() +
+  annotate("rect", xmin = 0, xmax = 1, ymin = 0, ymax = 1, fill = "white", alpha = 1) +
+  geom_rect(data = box_df_nct, aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = fill),
+            color = "#5B5B5B", linewidth = 0.6, show.legend = FALSE) +
+  scale_fill_identity() +
+  annotate("text", x = 0.02, y = 0.98, label = "B. Non-centred", hjust = 0, vjust = 1, size = 7.0, fontface = "bold") +
+  annotate("text", x = 0.50, y = 0.84, label = "Draw process error, then map it to the next state.", size = 4.95) +
+  annotate("text", x = c(0.16, 0.48, 0.82), y = 0.59,
+           label = c("Median state after\nfeasibility step", "Process-error\ndraw", "State\nreconstruction"), size = 3.95, lineheight = 1.0) +
+  annotate("text", x = 0.16, y = 0.42, label = "P[t+1]^med", parse = TRUE, size = 5.8) +
+  annotate("text", x = 0.48, y = 0.42, label = "u[t+1] %~% N(0,1)", parse = TRUE, size = 5.8) +
+  annotate("text", x = 0.82, y = 0.40,
+           label = "P[t+1] == P[t+1]^med %.% exp(sigma %.% u[t+1])",
+           parse = TRUE, size = 4.8) +
+  annotate("segment", x = 0.30, xend = 0.34, y = 0.49, yend = 0.49,
+           arrow = arrow(length = unit(0.015, "npc")), linewidth = 0.7) +
+  annotate("segment", x = 0.62, xend = 0.66, y = 0.49, yend = 0.49,
+           arrow = arrow(length = unit(0.015, "npc")), linewidth = 0.7) +
+  annotate("text", x = 0.50, y = 0.16,
+           label = "The feasibility adjustment now affects both the median state and the error-to-state map.",
+           size = 4.5) +
+  coord_cartesian(xlim = c(0, 1), ylim = c(0, 1), clip = "off") +
+  theme_void() +
+  theme(plot.margin = margin(4, 6, 4, 6), plot.background = element_rect(fill = "white", color = NA))
+
+p_ct_nct <- cowplot::plot_grid(
+  p_ct, p_nct,
+  nrow = 1,
+  rel_widths = c(1.00, 1.58),
+  align = "h"
+)
+
+save_manuscript_plot(
+  p_ct_nct,
+  "ct_nct_constraint_schematic.png",
+  width = 15.8,
+  height = 6.2
+)
+
+print(p_ct_nct)
+```
+
+# Prior-only plots (from saved plot-data RDS)
+
+```{r paper_prior_only_saved_rds_plots, echo=FALSE, message=FALSE, fig.dim=c(12,8)}
+if (length(prior_only_rds_files) == 0) {
+  cat("No prior-only plot-data RDS found in ../results/prior_only.\n")
+} else {
+  prior_plot_params <- paste0("Pt[", 21:23, "]")
+  prior_scalar_params <- c("K", "r", "q", "sigma2", "tau2")
+  prior_bundles_raw <- lapply(prior_only_rds_files, readRDS)
+  bundle_has_softmax <- function(b) {
+    if (is.null(b$post_long)) return(FALSE)
+    any(grepl("softmax", unique(as.character(b$post_long$model))))
+  }
+  keep_main_prior_bundle <- !vapply(prior_bundles_raw, bundle_has_softmax, logical(1))
+  if (!all(keep_main_prior_bundle)) {
+    cat("Skipping softmax sensitivity bundles from the main eight-model prior-only figures: ",
+        sum(!keep_main_prior_bundle), "\n")
+  }
+  prior_bundles_raw <- prior_bundles_raw[keep_main_prior_bundle]
+  bundle_has_params <- function(b, params) {
+    if (is.null(b$post_long) || is.null(b$sim_long)) return(FALSE)
+    post_params <- unique(as.character(b$post_long$param))
+    sim_params <- unique(as.character(b$sim_long$param))
+    all(params %in% post_params) && all(params %in% sim_params)
+  }
+  has_prior_pt_bundle <- vapply(prior_bundles_raw, bundle_has_params, logical(1), params = prior_plot_params)
+  has_prior_scalar_bundle <- vapply(prior_bundles_raw, bundle_has_params, logical(1), params = prior_scalar_params)
+  if (!all(has_prior_pt_bundle)) {
+    cat("Skipping prior-only bundles without Pt[21:23] for P[21:23] plot: ",
+        sum(!has_prior_pt_bundle), "\n")
+  }
+  if (!any(has_prior_pt_bundle) && !any(has_prior_scalar_bundle)) {
+    stop("No compatible prior-only plot-data bundles found. Re-run analysis/PriorOnly.R.")
+  }
+  pt_post_long <- if (any(has_prior_pt_bundle)) bind_rows(lapply(prior_bundles_raw[has_prior_pt_bundle], `[[`, "post_long")) else NULL
+  pt_sim_long <- if (any(has_prior_pt_bundle)) bind_rows(lapply(prior_bundles_raw[has_prior_pt_bundle], `[[`, "sim_long")) else NULL
+  scalar_post_long <- if (any(has_prior_scalar_bundle)) bind_rows(lapply(prior_bundles_raw[has_prior_scalar_bundle], `[[`, "post_long")) else NULL
+  scalar_sim_long <- if (any(has_prior_scalar_bundle)) bind_rows(lapply(prior_bundles_raw[has_prior_scalar_bundle], `[[`, "sim_long")) else NULL
+
+  if ((!is.null(pt_post_long) && !is.null(pt_sim_long) && nrow(pt_post_long) > 0 && nrow(pt_sim_long) > 0) ||
+      (!is.null(scalar_post_long) && !is.null(scalar_sim_long) && nrow(scalar_post_long) > 0 && nrow(scalar_sim_long) > 0)) {
+    xgrid_unit <- seq(0, 1, length.out = 512)
+    dens_long_fn <- function(df, out_col, x_limits = c(0, 1), n_grid = 512) {
+      parts <- split(df, list(df$model, df$param), drop = TRUE)
+      out <- lapply(parts, function(dd) {
+        if (nrow(dd) == 0) return(NULL)
+        d <- if (is.null(x_limits)) {
+          density(dd$value, n = n_grid, na.rm = TRUE)
+        } else {
+          density(dd$value, from = x_limits[1], to = x_limits[2], n = n_grid, na.rm = TRUE)
+        }
+        tmp <- data.frame(
+          model = as.character(dd$model[1]),
+          param = as.character(dd$param[1]),
+          idx = seq_along(d$x),
+          x = d$x,
+          dens = d$y
+        )
+        names(tmp)[names(tmp) == "dens"] <- out_col
+        tmp
+      })
+      bind_rows(out)
+    }
+    dens_long_fn_param_limits <- function(df, out_col, param_limits, n_grid = 512) {
+      parts <- split(df, list(df$model, df$param), drop = TRUE)
+      out <- lapply(parts, function(dd) {
+        if (nrow(dd) == 0) return(NULL)
+        p <- as.character(dd$param[1])
+        lim <- param_limits[[p]]
+        if (is.null(lim) || any(!is.finite(lim))) return(NULL)
+        d <- density(dd$value, from = lim[1], to = lim[2], n = n_grid, na.rm = TRUE)
+        tmp <- data.frame(
+          model = as.character(dd$model[1]),
+          param = as.character(dd$param[1]),
+          idx = seq_along(d$x),
+          x = d$x,
+          dens = d$y
+        )
+        names(tmp)[names(tmp) == "dens"] <- out_col
+        tmp
+      })
+      bind_rows(out)
+    }
+
+    build_prior_diff_plot <- function(post_df, sim_df, params, filename, title_text,
+                                      panel_prefix, x_limits = c(0, 1),
+                                      free_x_by_param = FALSE,
+                                      aggregate_width = 14, aggregate_height = 8,
+                                      panel_width = 6.5, panel_height = 4.8) {
+      post_sub <- post_df %>% filter(param %in% params)
+      sim_sub <- sim_df %>% filter(param %in% params)
+      if (free_x_by_param && "q" %in% params) {
+        post_sub <- post_sub %>%
+          mutate(value = ifelse(as.character(param) == "q", log(pmax(value, .Machine$double.eps)), value))
+        sim_sub <- sim_sub %>%
+          mutate(value = ifelse(as.character(param) == "q", log(pmax(value, .Machine$double.eps)), value))
+      }
+      if (nrow(post_sub) == 0 || nrow(sim_sub) == 0) {
+        stop("Prior-only plot-data RDS does not include required parameters for: ", filename)
+      }
+      missing_params <- setdiff(params, unique(as.character(post_sub$param)))
+      if (length(missing_params) > 0) {
+        stop("Prior-only plot-data missing parameter(s) for ", filename, ": ",
+             paste(missing_params, collapse = ", "))
+      }
+
+      if (is.null(x_limits) && !free_x_by_param) {
+        xr <- range(c(post_sub$value, sim_sub$value), na.rm = TRUE)
+        if (!all(is.finite(xr))) xr <- c(0, 1)
+        if (xr[1] == xr[2]) {
+          pad <- ifelse(xr[1] == 0, 1, abs(xr[1]) * 0.05)
+          xr <- xr + c(-pad, pad)
+        } else {
+          pad <- 0.03 * diff(xr)
+          xr <- xr + c(-pad, pad)
+        }
+        x_limits <- xr
+      }
+      observed_models <- sort(unique(as.character(post_sub$model)))
+      ct_models <- sort(unique(as.character(post_sub$model[grepl("^ct", as.character(post_sub$model))])))
+      nct_models <- sort(unique(as.character(post_sub$model[grepl("^nct", as.character(post_sub$model))])))
+      model_levels <- c(ct_models, nct_models)
+      if (length(model_levels) == 0) {
+        model_levels <- observed_models
+      } else {
+        model_levels <- unique(c(model_levels, observed_models))
+      }
+      ncol_prior <- max(1, max(length(ct_models), length(nct_models)))
+
+      post_sub <- post_sub %>%
+        mutate(
+          model = factor(as.character(model), levels = model_levels),
+          param = factor(as.character(param), levels = params)
+        )
+      sim_sub <- sim_sub %>%
+        mutate(
+          model = factor(as.character(model), levels = levels(post_sub$model)),
+          param = factor(as.character(param), levels = levels(post_sub$param))
+        )
+      param_levels <- levels(post_sub$param)
+      param_label_values <- param_label_parse(param_levels)
+      param_label_values[param_levels == "q"] <- "log(q)"
+      param_label_values[param_levels == "Pt[23]"] <- "P[1989]"
+
+      if (free_x_by_param) {
+        param_limits_tbl <- bind_rows(
+          post_sub %>% transmute(param = as.character(param), value = value),
+          sim_sub %>% transmute(param = as.character(param), value = value)
+        ) %>%
+          group_by(param) %>%
+          summarise(
+            lo = min(value, na.rm = TRUE),
+            hi = max(value, na.rm = TRUE),
+            .groups = "drop"
+          ) %>%
+          mutate(
+            span = hi - lo,
+            pad = ifelse(span > 0, 0.03 * span, pmax(abs(lo), 1) * 0.03),
+            lo = lo - pad,
+            hi = hi + pad
+          )
+        param_limits <- setNames(
+          lapply(seq_len(nrow(param_limits_tbl)), function(i) c(param_limits_tbl$lo[i], param_limits_tbl$hi[i])),
+          param_limits_tbl$param
+        )
+        post_den <- dens_long_fn_param_limits(
+          post_sub, "dens_post", param_limits = param_limits, n_grid = length(xgrid_unit)
+        )
+      } else {
+        post_den <- dens_long_fn(post_sub, "dens_post", x_limits = x_limits, n_grid = length(xgrid_unit))
+      }
+
+      sim_truth_base <- sim_sub %>% mutate(model = "__truth__")
+      truth_den_base <- if (free_x_by_param) {
+        dens_long_fn_param_limits(
+          sim_truth_base, "dens_truth", param_limits = param_limits, n_grid = length(xgrid_unit)
+        )
+      } else {
+        dens_long_fn(sim_truth_base, "dens_truth", x_limits = x_limits, n_grid = length(xgrid_unit))
+      }
+      if (is.null(truth_den_base) || nrow(truth_den_base) == 0) {
+        truth_den_base <- tibble(
+          param = character(),
+          idx = integer(),
+          x_truth = numeric(),
+          dens_truth = numeric()
+        )
+      } else {
+        truth_den_base <- truth_den_base %>%
+          transmute(
+            param = as.character(param),
+            idx = idx,
+            x_truth = x,
+            dens_truth = dens_truth
+          )
+      }
+      truth_models <- as.character(levels(post_sub$model))
+      if (length(truth_models) == 0) {
+        truth_models <- sort(unique(as.character(post_sub$model)))
+      }
+      truth_den <- truth_den_base[rep(seq_len(nrow(truth_den_base)), each = length(truth_models)), , drop = FALSE]
+      truth_den$model <- rep(truth_models, times = nrow(truth_den_base))
+      truth_den <- as_tibble(truth_den) %>%
+        select(model, param, idx, x_truth, dens_truth)
+
+      den_df <- left_join(
+        post_den,
+        truth_den %>% select(model, param, idx, x_truth, dens_truth),
+        by = c("model", "param", "idx")
+      ) %>%
+        mutate(
+          dens_post = ifelse(is.na(dens_post), 0, dens_post),
+          dens_truth = ifelse(is.na(dens_truth), 0, dens_truth),
+          x_truth = ifelse(is.na(x_truth), x, x_truth),
+          param = factor(param, levels = levels(post_sub$param)),
+          model = factor(model, levels = levels(post_sub$model)),
+          y0 = as.numeric(param)
+        ) %>%
+        group_by(model, param) %>%
+        mutate(
+          dens_post_s = dens_post / max(dens_post, na.rm = TRUE),
+          dens_truth_s = dens_truth / max(dens_truth, na.rm = TRUE)
+        ) %>%
+        ungroup() %>%
+        mutate(
+          y_post = y0 + 0.85 * dens_post_s,
+          y_truth = y0 + 0.85 * dens_truth_s,
+          ymin = pmin(y_post, y_truth),
+          ymax = pmax(y_post, y_truth),
+          diff_dir = ifelse(dens_post_s >= dens_truth_s, "post_gt_truth", "truth_gt_post"),
+          diff_dir = factor(
+            diff_dir,
+            levels = c("post_gt_truth", "truth_gt_post"),
+            labels = c("Realised prior > Truth", "Truth > Realised prior")
+          )
+        ) %>%
+        group_by(model, param) %>%
+        mutate(
+          diff_run = cumsum(diff_dir != dplyr::lag(diff_dir, default = first(diff_dir)))
+        ) %>%
+        ungroup()
+
+      diff_palette <- c(
+        "Realised prior > Truth" = "#0B57A3",
+        "Truth > Realised prior" = "#D04A02"
+      )
+      post_line_colour <- "#3A3A3A"
+      truth_line_colour <- "#B80F0A"
+
+      if (free_x_by_param) {
+        den_df <- den_df %>%
+          mutate(
+            param_label = factor(
+              ifelse(
+                as.character(param) == "q",
+                "log(q)",
+                format_parameter_label_plotmath(as.character(param))
+              ),
+              levels = param_label_values
+            )
+          )
+
+        p_agg <- ggplot() +
+          geom_ribbon(
+            data = den_df,
+            aes(x = x, ymin = 0, ymax = dens_post_s, group = interaction(model, param)),
+            fill = "grey70",
+            alpha = 0.14,
+            colour = NA
+          ) +
+          geom_ribbon(
+            data = den_df,
+            aes(
+              x = x,
+              ymin = pmin(dens_post_s, dens_truth_s),
+              ymax = pmax(dens_post_s, dens_truth_s),
+              fill = diff_dir,
+              group = interaction(model, param, diff_run)
+            ),
+            alpha = 0.82,
+            colour = NA
+          ) +
+          geom_line(
+            data = den_df,
+            aes(x = x, y = dens_post_s, group = interaction(model, param)),
+            colour = post_line_colour,
+            linewidth = 0.35,
+            alpha = 0.75
+          ) +
+          geom_line(
+            data = den_df,
+            aes(x = x_truth, y = dens_truth_s, group = interaction(model, param)),
+            colour = truth_line_colour,
+            linewidth = 0.28,
+            alpha = 0.75
+          ) +
+          facet_grid(
+            model ~ param_label,
+            scales = "free_x",
+            labeller = labeller(param_label = label_parsed)
+          ) +
+          scale_fill_manual(
+            values = diff_palette,
+            name = "Difference"
+          ) +
+          labs(title = title_text, x = "Value", y = "Scaled density") +
+          theme_bw() +
+          theme(
+            strip.text.x = element_text(angle = 0, size = 13, face = "bold"),
+            strip.text.y = element_text(angle = 0, size = 13, face = "bold"),
+            axis.title.x = element_text(size = 14),
+            axis.title.y = element_text(size = 14),
+            axis.text.x = element_text(size = 12, margin = margin(t = 3)),
+            axis.text.y = element_text(size = 12),
+            panel.spacing.x = unit(1.1, "lines"),
+            legend.position = "bottom",
+            legend.title = element_text(size = 13, face = "bold"),
+            legend.text = element_text(size = 12)
+          )
+      } else {
+        p_agg <- ggplot() +
+          geom_ribbon(
+            data = den_df,
+            aes(x = x, ymin = y0, ymax = y_post, group = interaction(model, param)),
+            fill = "grey70",
+            alpha = 0.14,
+            colour = NA
+          ) +
+          geom_ribbon(
+            data = den_df,
+            aes(x = x, ymin = ymin, ymax = ymax, fill = diff_dir, group = interaction(model, param, diff_run)),
+            alpha = 0.82,
+            colour = NA
+          ) +
+          geom_line(
+            data = den_df,
+            aes(x = x, y = y_post, group = interaction(model, param)),
+            colour = post_line_colour,
+            linewidth = 0.35,
+            alpha = 0.75
+          ) +
+          geom_line(
+            data = den_df,
+            aes(x = x, y = y_truth, group = interaction(model, param)),
+            colour = truth_line_colour,
+            linewidth = 0.28,
+            alpha = 0.75
+          ) +
+          facet_wrap(~ model, scales = "free_x", nrow = 2, ncol = ncol_prior) +
+          scale_fill_manual(
+            values = diff_palette,
+            name = "Difference"
+          ) +
+          scale_y_continuous(
+            breaks = seq_along(levels(post_sub$param)),
+            labels = parse(text = param_label_values)
+          ) +
+          coord_cartesian(xlim = x_limits) +
+          labs(title = title_text, x = "Value", y = NULL) +
+          theme_bw() +
+          theme(
+            legend.position = "bottom",
+            strip.text = element_text(size = 13, face = "bold"),
+            axis.title.x = element_text(size = 14),
+            axis.text.x = element_text(size = 12, margin = margin(t = 3)),
+            axis.text.y = element_text(size = 12),
+            panel.spacing.x = unit(1.1, "lines"),
+            legend.title = element_text(size = 13, face = "bold"),
+            legend.text = element_text(size = 12)
+          )
+      }
+
+      print(p_agg)
+      save_manuscript_plot(p_agg, filename, width = aggregate_width, height = aggregate_height)
+
+      prior_model_levels <- levels(post_sub$model)
+      prior_model_levels <- prior_model_levels[prior_model_levels %in% unique(as.character(post_sub$model))]
+      for (mdl in prior_model_levels) {
+        den_dd <- dplyr::filter(den_df, model == mdl)
+        if (nrow(den_dd) == 0) next
+        if (free_x_by_param) {
+          den_dd <- den_dd %>%
+            mutate(
+              param_label = factor(
+                ifelse(
+                  as.character(param) == "q",
+                  "log(q)",
+                  format_parameter_label_plotmath(as.character(param))
+                ),
+                levels = param_label_values
+              )
+            )
+          p_panel <- ggplot() +
+            geom_ribbon(
+              data = den_dd,
+              aes(x = x, ymin = 0, ymax = dens_post_s, group = interaction(model, param)),
+              fill = "grey70",
+              alpha = 0.14,
+              colour = NA
+            ) +
+            geom_ribbon(
+              data = den_dd,
+              aes(
+                x = x,
+                ymin = pmin(dens_post_s, dens_truth_s),
+                ymax = pmax(dens_post_s, dens_truth_s),
+                fill = diff_dir,
+                group = interaction(model, param, diff_run)
+              ),
+              alpha = 0.82,
+              colour = NA
+            ) +
+            geom_line(
+              data = den_dd,
+              aes(x = x, y = dens_post_s, group = interaction(model, param)),
+              colour = post_line_colour,
+              linewidth = 0.35,
+              alpha = 0.75
+            ) +
+            geom_line(
+              data = den_dd,
+              aes(x = x_truth, y = dens_truth_s, group = interaction(model, param)),
+              colour = truth_line_colour,
+              linewidth = 0.28,
+              alpha = 0.75
+            ) +
+            facet_wrap(~ param_label, scales = "free_x", ncol = 3,
+                       labeller = labeller(param_label = label_parsed)) +
+            scale_fill_manual(values = diff_palette, guide = "none") +
+            labs(x = "Value", y = "Scaled density", subtitle = as.character(mdl)) +
+            theme_bw() +
+            theme(
+              plot.title = element_blank(),
+              legend.position = "none",
+              strip.text = element_text(size = 13, face = "bold"),
+              axis.title.x = element_text(size = 14),
+              axis.title.y = element_text(size = 14),
+              axis.text.x = element_text(size = 12, margin = margin(t = 3)),
+              axis.text.y = element_text(size = 12)
+            )
+        } else {
+          p_panel <- ggplot() +
+            geom_ribbon(
+              data = den_dd,
+              aes(x = x, ymin = y0, ymax = y_post, group = interaction(model, param)),
+              fill = "grey70",
+              alpha = 0.14,
+              colour = NA
+            ) +
+            geom_ribbon(
+              data = den_dd,
+              aes(x = x, ymin = ymin, ymax = ymax, fill = diff_dir, group = interaction(model, param, diff_run)),
+              alpha = 0.82,
+              colour = NA
+            ) +
+            geom_line(
+              data = den_dd,
+              aes(x = x, y = y_post, group = interaction(model, param)),
+              colour = post_line_colour,
+              linewidth = 0.35,
+              alpha = 0.75
+            ) +
+            geom_line(
+              data = den_dd,
+              aes(x = x, y = y_truth, group = interaction(model, param)),
+              colour = truth_line_colour,
+              linewidth = 0.28,
+              alpha = 0.75
+            ) +
+            scale_fill_manual(values = diff_palette, guide = "none") +
+            scale_y_continuous(
+              breaks = seq_along(levels(post_sub$param)),
+              labels = parse(text = param_label_values)
+            ) +
+            coord_cartesian(xlim = x_limits) +
+            labs(x = "Value", y = NULL, subtitle = as.character(mdl)) +
+            theme_bw() +
+            theme(
+              plot.title = element_blank(),
+              strip.text = element_text(size = 13, face = "bold"),
+              axis.title.x = element_text(size = 14),
+              axis.text.x = element_text(size = 12, margin = margin(t = 3)),
+              axis.text.y = element_text(size = 12)
+            )
+        }
+        save_manuscript_plot(
+          p_panel,
+          sprintf("%s__%s.png", panel_prefix, panel_slug(mdl)),
+          width = panel_width,
+          height = panel_height
+        )
+      }
+    }
+
+    if (!is.null(pt_post_long) && !is.null(pt_sim_long) && nrow(pt_post_long) > 0 && nrow(pt_sim_long) > 0) {
+      build_prior_diff_plot(
+        post_df = pt_post_long,
+        sim_df = pt_sim_long,
+        params = prior_plot_params,
+        filename = "prior_only_ridge_difference.png",
+        title_text = "Prior-only: P[1987:1989] realised prior vs truth",
+        panel_prefix = "prior_only_ridge_difference_panel",
+        x_limits = c(0, 1),
+        aggregate_width = 14,
+        aggregate_height = 9.5,
+        panel_width = 8.0,
+        panel_height = 4.8
+      )
+    } else {
+      cat("Skipping prior-only P[21:23] difference plot; required parameters not present in saved RDS.\n")
+    }
+
+    if (!is.null(scalar_post_long) && !is.null(scalar_sim_long) &&
+        all(prior_scalar_params %in% unique(as.character(scalar_post_long$param))) &&
+        all(prior_scalar_params %in% unique(as.character(scalar_sim_long$param)))) {
+      build_prior_diff_plot(
+        post_df = scalar_post_long,
+        sim_df = scalar_sim_long,
+        params = prior_scalar_params,
+        filename = "prior_only_parameter_difference.png",
+        title_text = "Prior-only: K, r, q, sigma2, tau2 realised prior vs truth",
+        panel_prefix = "prior_only_parameter_difference_panel",
+        x_limits = NULL,
+        free_x_by_param = TRUE,
+        aggregate_width = 16,
+        aggregate_height = 10.5,
+        panel_width = 8.0,
+        panel_height = 6.5
+      )
+    } else {
+      cat("Skipping prior-only scalar-parameter difference plot; required parameters not present in saved RDS.\n")
+    }
+  } else {
+    cat("Prior-only plot-data RDS found, but required objects are missing.\n")
+  }
+}
+```
+
+# AlbacoreFits plots (from saved plot-data RDS)
+
+```{r paper_albacorefits_saved_rds_plots, echo=FALSE, message=FALSE, fig.dim=c(12,8)}
+if (length(albacore_rds_files) == 0) {
+  cat("No AlbacoreFits plot-data RDS found in ../results/albacore_fits.\n")
+} else {
+  alb_bundles <- lapply(albacore_rds_files, readRDS)
+  bt_long_all <- bind_rows(lapply(alb_bundles, `[[`, "bt_long_all"))
+  param_long_all <- bind_rows(lapply(alb_bundles, `[[`, "param_long_all"))
+
+  albacore_scenario_label <- function(x) {
+    x_chr <- as.character(x)
+    out <- dplyr::case_when(
+      grepl("^tau2Prior\\[3\\]=0", x_chr) ~ "Prior predictive distribution",
+      grepl("^tau2Prior\\[3\\]=1", x_chr) ~ "Posterior distribution",
+      x_chr %in% c("0", "tau0") ~ "Prior predictive distribution",
+      x_chr %in% c("1", "tau1") ~ "Posterior distribution",
+      TRUE ~ x_chr
+    )
+    factor(out, levels = c(
+      "Prior predictive distribution",
+      "Posterior distribution"
+    ))
+  }
+
+  if (!is.null(bt_long_all) && nrow(bt_long_all) > 0) {
+    bt_long_all <- bt_long_all %>%
+      filter(time <= ntimes) %>%
+      mutate(
+        scenario_label = albacore_scenario_label(scenario),
+        year = factor(years[time], levels = years)
+      )
+    bt_single_var <- length(unique(as.character(bt_long_all$var))) == 1
+
+    p_alb_bt <- ggplot(bt_long_all, aes(x = year, y = value, fill = model)) +
+      geom_boxplot(position = position_dodge(width = 0.8), width = 0.7, outlier.size = 0.35) +
+      {
+        if (bt_single_var) {
+          facet_grid(scenario_label ~ ., scales = "free_y")
+        } else {
+          facet_grid(scenario_label ~ var, scales = "free_y")
+        }
+      } +
+      labs(title = "AlbacoreFits biomass states", x = "Year", y = "Biomass (MT)") +
+      theme_bw() +
+      theme(
+        legend.position = "bottom",
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        strip.text.y = element_text(size = 9),
+        strip.text.x = element_text(size = 9)
+      )
+    print(p_alb_bt)
+    save_manuscript_plot(p_alb_bt, "albacore_biomass_states.png", width = 8.0, height = 10.5)
+
+    bt_models <- sort(unique(as.character(bt_long_all$model)))
+    for (mdl in bt_models) {
+      dd <- dplyr::filter(bt_long_all, model == mdl)
+      if (nrow(dd) == 0) next
+      dd_single_var <- length(unique(as.character(dd$var))) == 1
+      p_bt_panel <- ggplot(dd, aes(x = year, y = value, fill = model)) +
+        geom_boxplot(width = 0.7, outlier.size = 0.35) +
+        {
+          if (dd_single_var) {
+            facet_grid(scenario_label ~ ., scales = "free_y")
+          } else {
+            facet_grid(scenario_label ~ var, scales = "free_y")
+          }
+        } +
+        labs(x = "Year", y = "Biomass (MT)", subtitle = mdl) +
+        theme_bw() +
+        theme(
+          legend.position = "none",
+          axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+          plot.title = element_blank(),
+          strip.text.y = element_text(size = 8),
+          strip.text.x = element_text(size = 8)
+        )
+      save_manuscript_plot(
+        p_bt_panel,
+        sprintf("albacore_biomass_states_panel__%s.png", panel_slug(mdl)),
+        width = 6.5,
+        height = 8.5
+      )
+    }
+  } else {
+    cat("AlbacoreFits biomass plot data is missing or empty.\n")
+  }
+}
+```
+
+# ECDF difference overlay (paper version: exclude CV=no)
+
+```{r paper_sbc_ecdf_difference_overlay, echo=FALSE, message=FALSE, fig.dim=c(12,8)}
+if (!has_sbc_results) {
+  cat("No SBC results found. Skipping paper ECDF plots.\n")
+} else {
+  build_ecdf_matrix_plot <- function(results_list, model_groups_subset, plot_title = NULL,
+                                     show_legend = TRUE, fixed_color = NULL,
+                                     share_y_within_row = TRUE,
+                                     reference_results_list = NULL,
+                                     reference_model_groups_subset = NULL,
+                                     clip_result_levels = NULL,
+                                     legend_title = "CV",
+                                     legend_labels = NULL,
+                                     include_loglik = FALSE) {
+    model_keys <- names(model_groups_subset)
+    if (length(model_keys) == 0) return(NULL)
+
+    prepped <- lapply(model_keys, function(model_key) {
+      prepare_ecdf_diff_overlay_data(
+        results_list[model_groups_subset[[model_key]]],
+        drop_loglik = !include_loglik
+      )
+    })
+    names(prepped) <- model_keys
+
+    limits_prepped <- prepped
+    if (!is.null(reference_results_list) && !is.null(reference_model_groups_subset)) {
+      ref_keys <- intersect(model_keys, names(reference_model_groups_subset))
+      limits_prepped[ref_keys] <- lapply(ref_keys, function(model_key) {
+        prepare_ecdf_diff_overlay_data(
+          reference_results_list[reference_model_groups_subset[[model_key]]],
+          drop_loglik = !include_loglik
+        )
+      })
+      names(limits_prepped)[match(ref_keys, names(limits_prepped))] <- ref_keys
+    }
+
+    legend_levels <- unique(unlist(lapply(prepped, `[[`, "legend_levels")))
+    legend_order <- c("0.1", "0.3", "0.5", "no")
+    legend_levels <- c(intersect(legend_order, legend_levels), setdiff(legend_levels, legend_order))
+
+    color_mapping <- c(
+      "0.1" = "#F03B20",
+      "0.3" = "#3182BD",
+      "0.5" = "#4DAF4A",
+      "no" = "#636363"
+    )
+    color_mapping <- color_mapping[legend_levels]
+    if (!is.null(fixed_color) && length(legend_levels) > 0) {
+      color_mapping[] <- fixed_color
+    }
+
+    ecdf_long <- bind_rows(lapply(model_keys, function(model_key) {
+      prepped[[model_key]]$combined_ecdf_df %>%
+        mutate(model = factor(model_key, levels = model_keys))
+    }))
+    ecdf_long <- ecdf_long %>%
+      mutate(model = factor(model, levels = model_keys))
+
+    limits_long <- bind_rows(lapply(model_keys, function(model_key) {
+      lim_df <- limits_prepped[[model_key]]$limits_df_trans
+      if (is.null(lim_df) || nrow(lim_df) == 0) return(NULL)
+      lim_df %>% mutate(model = factor(model_key, levels = model_keys))
+    }))
+    if (!is.null(limits_long) && nrow(limits_long) == 0) {
+      limits_long <- NULL
+    }
+    if (!is.null(limits_long) && !("group" %in% names(limits_long))) {
+      if ("variable" %in% names(limits_long)) {
+        limits_long <- limits_long %>% mutate(group = variable)
+      } else {
+        limits_long <- NULL
+      }
+    }
+
+    if (!is.null(legend_labels)) {
+      legend_labels <- legend_labels[legend_levels]
+      legend_labels[is.na(legend_labels)] <- legend_levels[is.na(legend_labels)]
+    }
+
+    if (share_y_within_row && !is.null(clip_result_levels) && length(clip_result_levels) > 0) {
+      row_limit_ecdf <- ecdf_long %>%
+        dplyr::filter(!(as.character(result_name) %in% clip_result_levels)) %>%
+        dplyr::group_by(group) %>%
+        dplyr::summarise(y_abs = max(abs(z_diff), na.rm = TRUE), .groups = "drop")
+
+      row_limit_ref <- NULL
+      if (!is.null(limits_long) && nrow(limits_long) > 0) {
+        row_limit_ref <- limits_long %>%
+          dplyr::group_by(group) %>%
+          dplyr::summarise(
+            y_abs_ref = max(abs(c(ymin, ymax)), na.rm = TRUE),
+            .groups = "drop"
+          )
+      }
+
+      row_limits <- row_limit_ecdf
+      if (!is.null(row_limit_ref) && nrow(row_limit_ref) > 0) {
+        row_limits <- dplyr::full_join(row_limit_ecdf, row_limit_ref, by = "group")
+      } else {
+        row_limits$y_abs_ref <- NA_real_
+      }
+
+      row_limits <- row_limits %>%
+        dplyr::mutate(
+          y_abs = pmax(y_abs, y_abs_ref, na.rm = TRUE),
+          y_clip = dplyr::if_else(is.finite(y_abs) & y_abs > 0, y_abs * 1.03, y_abs)
+        ) %>%
+        dplyr::select(group, y_clip)
+
+      ecdf_long <- ecdf_long %>%
+        dplyr::left_join(row_limits, by = "group") %>%
+        dplyr::mutate(
+          z_diff = dplyr::if_else(
+            as.character(result_name) %in% clip_result_levels & is.finite(y_clip),
+            dplyr::if_else(abs(z_diff) > y_clip, NA_real_, z_diff),
+            z_diff
+          )
+        ) %>%
+        dplyr::select(-y_clip)
+    }
+
+    clipped_ecdf_long <- NULL
+    regular_ecdf_long <- ecdf_long
+    if (share_y_within_row && !is.null(clip_result_levels) && length(clip_result_levels) > 0) {
+      clipped_ecdf_long <- ecdf_long %>%
+        dplyr::filter(as.character(result_name) %in% clip_result_levels)
+      regular_ecdf_long <- ecdf_long %>%
+        dplyr::filter(!(as.character(result_name) %in% clip_result_levels))
+
+      if (include_loglik) {
+        loglik_label <- format_parameter_label_plotmath("loglik")
+        clipped_ecdf_long <- clipped_ecdf_long %>%
+          dplyr::filter(as.character(group) != loglik_label)
+      }
+    }
+
+    if (share_y_within_row) {
+      p <- ggplot()
+      if (!is.null(limits_long) && nrow(limits_long) > 0) {
+        oval_long <- limits_long %>%
+          dplyr::group_by(group, model) %>%
+          dplyr::summarise(
+            y_radius = max(abs(c(ymin, ymax)), na.rm = TRUE),
+            .groups = "drop"
+          ) %>%
+          dplyr::rowwise() %>%
+          dplyr::do({
+            y_radius <- as.numeric(.$y_radius[[1]])
+            x_top <- seq(0, 1, length.out = 240)
+            tibble::tibble(
+              group = .$group,
+              model = .$model,
+              x = c(x_top, rev(x_top)),
+              y = c(
+                y_radius * sqrt(pmax(0, 1 - ((x_top - 0.5) / 0.5)^2)),
+                -y_radius * sqrt(pmax(0, 1 - ((rev(x_top) - 0.5) / 0.5)^2))
+              )
+            )
+          }) %>%
+          dplyr::ungroup()
+
+        p <- p +
+          geom_polygon(
+            data = oval_long,
+            aes(x = x, y = y, group = interaction(group, model)),
+            fill = "lightblue",
+            alpha = 0.28,
+            colour = NA
+          ) +
+          geom_path(
+            data = oval_long,
+            aes(x = x, y = y, group = interaction(group, model)),
+            color = "blue",
+            alpha = 0.65,
+            linewidth = 0.45
+          ) +
+          geom_hline(yintercept = 0, color = "blue", alpha = 0.85, linewidth = 0.55)
+      }
+
+      p <- p +
+        geom_step(
+          data = regular_ecdf_long,
+          aes(x = z, y = z_diff, color = result_name, group = result_name),
+          alpha = 0.88,
+          linewidth = 0.8
+        )
+
+      if (!is.null(clipped_ecdf_long) && nrow(clipped_ecdf_long) > 0) {
+        p <- p +
+          geom_path(
+            data = clipped_ecdf_long,
+            aes(x = z, y = z_diff, color = result_name, group = result_name),
+            alpha = 0.88,
+            linewidth = 0.8,
+            na.rm = TRUE
+          )
+      }
+
+      p <- p +
+        scale_color_manual(
+          name = legend_title,
+          values = color_mapping,
+          breaks = legend_levels,
+          labels = legend_labels
+        ) +
+        scale_x_continuous(
+          breaks = c(0, 0.5, 1.0),
+          labels = c("0.0", "0.5", "1.0"),
+          limits = c(0, 1)
+        ) +
+        scale_y_continuous(labels = scales::label_number(accuracy = 0.01)) +
+        facet_grid(
+          group ~ model,
+          scales = "free_y",
+          labeller = labeller(group = label_parsed)
+        ) +
+        labs(
+          title = plot_title,
+          x = "Normalized rank (PIT)",
+          y = "ECDF Difference"
+        ) +
+        theme_minimal(base_size = 14) +
+        theme(
+          legend.position = if (show_legend) "bottom" else "none",
+          legend.title = element_text(face = "bold", size = 15),
+          legend.text = element_text(size = 14),
+          strip.text.x = element_text(size = 16, face = "bold"),
+          strip.text.y = element_text(size = 16, face = "bold"),
+          panel.grid = element_blank(),
+          panel.background = element_rect(fill = "white", color = NA),
+          plot.background = element_rect(fill = "white", color = NA),
+          axis.title = element_text(size = 18),
+          axis.text = element_text(size = 12),
+          panel.spacing.x = unit(0.8, "lines"),
+          panel.spacing.y = unit(0.55, "lines")
+        ) +
+        guides(color = guide_legend(override.aes = list(linewidth = 1.6, alpha = 1), nrow = 1))
+
+      return(p)
+    }
+
+    group_levels <- levels(ecdf_long$group)
+    if (is.null(group_levels)) {
+      group_levels <- unique(as.character(ecdf_long$group))
+    }
+    group_levels <- group_levels[group_levels %in% as.character(unique(ecdf_long$group))]
+
+    oval_long <- NULL
+    if (!is.null(limits_long) && nrow(limits_long) > 0) {
+      oval_long <- limits_long %>%
+        dplyr::group_by(group, model) %>%
+        dplyr::summarise(
+          y_radius = max(abs(c(ymin, ymax)), na.rm = TRUE),
+          .groups = "drop"
+        ) %>%
+        dplyr::rowwise() %>%
+        dplyr::do({
+          y_radius <- as.numeric(.$y_radius[[1]])
+          x_top <- seq(0, 1, length.out = 240)
+          tibble::tibble(
+            group = .$group,
+            model = .$model,
+            x = c(x_top, rev(x_top)),
+            y = c(
+              y_radius * sqrt(pmax(0, 1 - ((x_top - 0.5) / 0.5)^2)),
+              -y_radius * sqrt(pmax(0, 1 - ((rev(x_top) - 0.5) / 0.5)^2))
+            )
+          )
+        }) %>%
+        dplyr::ungroup() %>%
+        dplyr::mutate(
+          group = factor(as.character(group), levels = group_levels),
+          model = factor(as.character(model), levels = model_keys)
+        )
+    }
+
+    make_header_strip <- function(label) {
+      ggplot() +
+        annotate("text", x = 0.5, y = 0.5, label = label, fontface = "bold", size = 6.2) +
+        coord_cartesian(xlim = c(0, 1), ylim = c(0, 1), expand = FALSE, clip = "off") +
+        theme_void() +
+        theme(plot.margin = margin(4, 4, 12, 4))
+    }
+
+    make_row_label <- function(label) {
+      ggplot() +
+        annotate("text", x = 0.5, y = 0.5, label = label, parse = TRUE, angle = -90, size = 7) +
+        coord_cartesian(xlim = c(0, 1), ylim = c(0, 1), expand = FALSE, clip = "off") +
+        theme_void() +
+        theme(plot.margin = margin(0, 8, 0, 12))
+    }
+
+    base_panel_theme <- theme_minimal(base_size = 12) +
+      theme(
+        panel.grid = element_blank(),
+        panel.background = element_rect(fill = "white", color = NA),
+        plot.background = element_rect(fill = "white", color = NA),
+        axis.title = element_blank(),
+        legend.position = "none",
+        plot.margin = margin(2, 2, 2, 2)
+      )
+
+    make_panel_plot <- function(group_label, model_key, show_x = FALSE, show_y = FALSE) {
+      panel_ecdf <- ecdf_long %>%
+        dplyr::filter(as.character(group) == group_label, as.character(model) == model_key)
+      panel_oval <- NULL
+      if (!is.null(oval_long)) {
+        panel_oval <- oval_long %>%
+          dplyr::filter(as.character(group) == group_label, as.character(model) == model_key)
+      }
+
+      p_panel <- ggplot()
+      if (!is.null(panel_oval) && nrow(panel_oval) > 0) {
+        p_panel <- p_panel +
+          geom_polygon(
+            data = panel_oval,
+            aes(x = x, y = y, group = 1),
+            fill = "lightblue",
+            alpha = 0.28,
+            colour = NA
+          ) +
+          geom_path(
+            data = panel_oval,
+            aes(x = x, y = y, group = 1),
+            color = "blue",
+            alpha = 0.65,
+            linewidth = 0.45
+          ) +
+          geom_hline(yintercept = 0, color = "blue", alpha = 0.85, linewidth = 0.55)
+      }
+
+      p_panel <- p_panel +
+        geom_step(
+          data = panel_ecdf,
+          aes(x = z, y = z_diff, color = result_name, group = result_name),
+          alpha = 0.88,
+          linewidth = 0.8
+        ) +
+        scale_color_manual(values = color_mapping, breaks = legend_levels, drop = FALSE) +
+        scale_x_continuous(
+          breaks = c(0, 0.5, 1.0),
+          labels = c("0.0", "0.5", "1.0"),
+          limits = c(0, 1)
+        ) +
+        scale_y_continuous(labels = scales::label_number(accuracy = 0.01)) +
+        base_panel_theme
+
+      if (show_x) {
+        p_panel <- p_panel +
+          theme(
+            axis.text.x = element_text(size = 10),
+            axis.ticks.x = element_line()
+          )
+      } else {
+        p_panel <- p_panel +
+          theme(
+            axis.text.x = element_blank(),
+            axis.ticks.x = element_blank()
+          )
+      }
+
+      if (show_y) {
+        p_panel <- p_panel +
+          theme(
+            axis.text.y = element_text(size = 10),
+            axis.ticks.y = element_line()
+          )
+      } else {
+        p_panel <- p_panel +
+          theme(
+            axis.text.y = element_blank(),
+            axis.ticks.y = element_blank()
+          )
+      }
+
+      p_panel
+    }
+
+    header_row <- cowplot::plot_grid(
+      plotlist = c(lapply(model_keys, make_header_strip), list(ggplot() + theme_void())),
+      nrow = 1,
+      rel_widths = c(rep(1, length(model_keys)), 0.24)
+    )
+
+    row_plots <- lapply(seq_along(group_levels), function(i) {
+      grp <- group_levels[i]
+      panel_row <- lapply(seq_along(model_keys), function(j) {
+        make_panel_plot(
+          group_label = grp,
+          model_key = model_keys[j],
+          show_x = i == length(group_levels),
+          show_y = TRUE
+        )
+      })
+      cowplot::plot_grid(
+        plotlist = c(panel_row, list(make_row_label(grp))),
+        nrow = 1,
+        align = "h",
+        rel_widths = c(rep(1, length(model_keys)), 0.24)
+      )
+    })
+
+    main_grid <- cowplot::plot_grid(
+      plotlist = c(list(header_row), row_plots),
+      ncol = 1,
+      rel_heights = c(0.52, rep(1, length(row_plots)))
+    )
+
+    x_label <- ggplot() +
+      annotate("text", x = 0.5, y = 0.5, label = "PIT", size = 9) +
+      theme_void()
+    y_label <- ggplot() +
+      annotate("text", x = 0.5, y = 0.5, label = "ECDF Difference", angle = 90, size = 9) +
+      theme_void()
+
+    body <- cowplot::plot_grid(
+      y_label,
+      main_grid,
+      nrow = 1,
+      rel_widths = c(0.07, 0.93)
+    )
+
+    assembled <- cowplot::plot_grid(body, x_label, ncol = 1, rel_heights = c(1, 0.06))
+
+    if (!is.null(plot_title) && nzchar(plot_title)) {
+      title_grob <- ggplot() +
+        annotate("text", x = 0, y = 0.5, label = plot_title, hjust = 0, fontface = "bold", size = 6.5) +
+        theme_void()
+      assembled <- cowplot::plot_grid(title_grob, assembled, ncol = 1, rel_heights = c(0.06, 0.94))
+    }
+
+    assembled
+  }
+
+  ordered_model_groups <- paper_model_groups[order(names(paper_model_groups))]
+  ct_groups <- ordered_model_groups[grepl("^ct_", names(ordered_model_groups))]
+  nct_groups <- ordered_model_groups[grepl("^nct_", names(ordered_model_groups))]
+  no_results <- all_results[!vapply(names(all_results), keep_run, logical(1))]
+  no_model_groups <- list()
+  if (length(no_results) > 0) {
+    parsed_no <- parse_sbc_stem(names(no_results))
+    no_model_groups <- split(parsed_no$run_id, parsed_no$model_key)
+    no_model_groups <- no_model_groups[order(names(no_model_groups))]
+  }
+  combined_model_groups <- list()
+  if (length(all_results) > 0) {
+    parsed_all <- parse_sbc_stem(names(all_results))
+    combined_model_groups <- split(parsed_all$run_id, parsed_all$model_key)
+    combined_model_groups <- combined_model_groups[order(names(combined_model_groups))]
+  }
+  ct_all_groups <- combined_model_groups[grepl("^ct_", names(combined_model_groups))]
+  nct_all_groups <- combined_model_groups[grepl("^nct_", names(combined_model_groups))]
+  ecdf_legend_labels <- c(
+    "0.1" = "0.1",
+    "0.3" = "0.3",
+    "0.5" = "0.5",
+    "no" = "No obs. info"
+  )
+
+  ecdf_panel_plots <- lapply(ordered_model_groups, function(model_subset) {
+    plot_ecdf_diff_overlay(
+      paper_results[model_subset],
+      base_size = 13,
+      facet_ncol = 5,
+      legend_ncol = 3
+    )
+  })
+  ecdf_panel_plots <- ecdf_panel_plots[order(names(ecdf_panel_plots))]
+  save_plot_list_panels(ecdf_panel_plots, "paper_sbc_ecdf_diff_overlay_panel", width = 10.5, height = 6.2)
+
+  p_ecdf_all <- build_ecdf_matrix_plot(
+    all_results,
+    combined_model_groups,
+    reference_results_list = paper_results,
+    reference_model_groups_subset = ordered_model_groups,
+    clip_result_levels = "no",
+    legend_title = "CV",
+    legend_labels = ecdf_legend_labels,
+    include_loglik = TRUE
+  )
+  p_ecdf_ct <- build_ecdf_matrix_plot(
+    all_results,
+    ct_all_groups,
+    reference_results_list = paper_results,
+    reference_model_groups_subset = ct_groups,
+    clip_result_levels = "no",
+    legend_title = "CV",
+    legend_labels = ecdf_legend_labels,
+    include_loglik = TRUE
+  )
+  p_ecdf_nct <- build_ecdf_matrix_plot(
+    all_results,
+    nct_all_groups,
+    reference_results_list = paper_results,
+    reference_model_groups_subset = nct_groups,
+    clip_result_levels = "no",
+    legend_title = "CV",
+    legend_labels = ecdf_legend_labels,
+    include_loglik = TRUE
+  )
+  p_ecdf_no <- NULL
+
+  if (!is.null(p_ecdf_all)) {
+    print(p_ecdf_all)
+    save_manuscript_plot(p_ecdf_all, "paper_sbc_ecdf_diff_overlay_cv_only.png", width = 22, height = 17.5)
+  }
+  if (!is.null(p_ecdf_ct)) {
+    save_manuscript_plot(p_ecdf_ct, "paper_sbc_ecdf_diff_overlay_ct_cv_only.png", width = 13, height = 15)
+  }
+  if (!is.null(p_ecdf_nct)) {
+    save_manuscript_plot(p_ecdf_nct, "paper_sbc_ecdf_diff_overlay_nct_cv_only.png", width = 13, height = 15)
+  }
+}
+```
+
+# Divergent transitions
+
+```{r paper_sbc_divergent_transition_histograms, echo=FALSE, message=FALSE, fig.dim=c(12,8)}
+if (!has_sbc_results) {
+  cat("No SBC results found. Skipping divergence plots.\n")
+} else {
+  plot_data <- imap_dfr(all_results, function(result, model_name) {
+    n_divergent <- require_sbc_diag_column(result, model_name, "backend_diagnostics", "n_divergent")
+    n_sample <- all_nsamples[[model_name]]
+    data.frame(
+      n_divergent = n_divergent,
+      percentage = (n_divergent / n_sample) * 100,
+      model_name = model_name
+    )
+  })
+  plot_data <- add_sbc_model_cv_groups(plot_data)
+  div_fit_rate <- plot_data %>%
+    group_by(cv_group, model_group) %>%
+    summarise(
+      pct_any_div = 100 * mean(n_divergent > 0, na.rm = TRUE),
+      label = sprintf("Any div.: %.1f%%", pct_any_div),
+      .groups = "drop"
+    )
+  p_div_hist <- ggplot(plot_data, aes(x = percentage)) +
+    geom_histogram(bins = 25, fill = "#2F7F95", alpha = 0.75) +
+    facet_grid(cv_group ~ model_group, scales = "free_y", labeller = paper_cv_labeller) +
+    geom_text(
+      data = div_fit_rate,
+      aes(x = Inf, y = Inf, label = label),
+      inherit.aes = FALSE,
+      hjust = 1.05,
+      vjust = 1.1,
+      size = 3.6,
+      fontface = "bold"
+    ) +
+    scale_x_continuous(labels = percent_format(scale = 1, accuracy = 0.1)) +
+    labs(
+      title = "Divergent transition rate across SBC fits",
+      subtitle = "Panel label = share of SBC refits with at least one divergent transition",
+      x = "Divergent transitions (% of post-warmup draws)",
+      y = "Frequency"
+    ) +
+    paper_theme() +
+    theme(
+      axis.text.x = element_text(angle = 35, hjust = 1, size = 11),
+      axis.text.y = element_text(size = 11),
+      strip.text.x = element_text(size = 14, face = "bold"),
+      strip.text.y = element_text(size = 14, face = "bold"),
+      strip.text.y.right = element_text(size = 12, face = "bold")
+    )
+  print(p_div_hist)
+  save_manuscript_plot(p_div_hist, "paper_sbc_divergence_histograms_cv_only.png", width = 14, height = 7.6)
+  save_sbc_perf_panel_plots(
+    plot_data = plot_data,
+    x_col = "percentage",
+    prefix = "paper_sbc_divergence_histograms_panel",
+    x_label = "Divergent transitions (% of post-warmup draws)",
+    x_scale = scale_x_continuous(labels = percent_format(scale = 1, accuracy = 0.1)),
+    angle_x = TRUE
+  )
+}
+```
+
+# Minimum bulk ESS
+
+```{r paper_sbc_effective_sample_size_histograms, echo=FALSE, message=FALSE, fig.dim=c(12,8)}
+if (!has_sbc_results) {
+  cat("No SBC results found. Skipping ESS plots.\n")
+} else {
+  plot_data <- imap_dfr(all_results, function(result, model_name) {
+    min_ess_bulk <- require_sbc_diag_column(result, model_name, "default_diagnostics", "min_ess_bulk")
+    nchains <- all_nchains[[model_name]]
+    data.frame(
+      min_ess_bulk = min_ess_bulk,
+      percentage = (min_ess_bulk / (nchains * 100)) * 100,
+      model_name = model_name
+    )
+  })
+  plot_data <- add_sbc_model_cv_groups(plot_data)
+  p_ess_hist <- ggplot(plot_data, aes(x = percentage)) +
+    geom_histogram(bins = 25, fill = "#2F7F95", alpha = 0.75) +
+    facet_grid(cv_group ~ model_group, scales = "free_y", labeller = paper_cv_labeller) +
+    geom_vline(xintercept = 100, linetype = "dashed") +
+    scale_x_continuous(labels = percent_format(scale = 1, accuracy = 0.1)) +
+    labs(
+      title = "Minimum bulk ESS threshold performance across SBC fits",
+      x = "min bulk ESS as % of (100 x nchains)",
+      y = "Frequency"
+    ) +
+    paper_theme() +
+    theme(
+      axis.text.x = element_text(angle = 35, hjust = 1, size = 11),
+      axis.text.y = element_text(size = 11),
+      strip.text.x = element_text(size = 14, face = "bold"),
+      strip.text.y = element_text(size = 14, face = "bold"),
+      strip.text.y.right = element_text(size = 12, face = "bold")
+    )
+  print(p_ess_hist)
+  save_manuscript_plot(p_ess_hist, "paper_sbc_ess_histograms_cv_only.png", width = 12, height = 6.5)
+  save_sbc_perf_panel_plots(
+    plot_data = plot_data,
+    x_col = "percentage",
+    prefix = "paper_sbc_ess_histograms_panel",
+    x_label = "min bulk ESS as % of (100 x nchains)",
+    x_scale = scale_x_continuous(labels = percent_format(scale = 1, accuracy = 0.1)),
+    x_vline = 100,
+    angle_x = TRUE
+  )
+}
+```
+
+# Treedepth saturation
+
+```{r paper_sbc_treedepth_saturation_histograms, echo=FALSE, message=FALSE, fig.dim=c(12,8)}
+if (!has_sbc_results) {
+  cat("No SBC results found. Skipping treedepth plots.\n")
+} else {
+  plot_data <- imap_dfr(all_results, function(result, model_name) {
+    n_max_treedepth <- require_sbc_diag_column(result, model_name, "backend_diagnostics", "n_max_treedepth")
+    n_sample <- all_nsamples[[model_name]]
+    data.frame(
+      n_max_treedepth = n_max_treedepth,
+      percentage = (n_max_treedepth / n_sample) * 100,
+      model_name = model_name
+    )
+  })
+  plot_data <- add_sbc_model_cv_groups(plot_data)
+  p_treedepth_hist <- ggplot(plot_data, aes(x = percentage)) +
+    geom_histogram(bins = 25, fill = "#2F7F95", alpha = 0.75) +
+    facet_grid(cv_group ~ model_group, scales = "free_y", labeller = paper_cv_labeller) +
+    scale_x_continuous(labels = percent_format(scale = 1, accuracy = 0.1)) +
+    labs(
+      title = "Max treedepth saturation across SBC fits",
+      x = "Transitions hitting max treedepth (% of post-warmup draws)",
+      y = "Frequency"
+    ) +
+    paper_theme() +
+    theme(
+      axis.text.x = element_text(angle = 35, hjust = 1, size = 11),
+      axis.text.y = element_text(size = 11),
+      strip.text.x = element_text(size = 14, face = "bold"),
+      strip.text.y = element_text(size = 14, face = "bold"),
+      strip.text.y.right = element_text(size = 12, face = "bold")
+    )
+  print(p_treedepth_hist)
+  save_manuscript_plot(p_treedepth_hist, "paper_sbc_treedepth_histograms_cv_only.png", width = 12, height = 6.5)
+  save_sbc_perf_panel_plots(
+    plot_data = plot_data,
+    x_col = "percentage",
+    prefix = "paper_sbc_treedepth_histograms_panel",
+    x_label = "Transitions hitting max treedepth (% of post-warmup draws)",
+    x_scale = scale_x_continuous(labels = percent_format(scale = 1, accuracy = 0.1)),
+    angle_x = TRUE
+  )
+}
+```
+
+# R-hat
+
+```{r paper_sbc_rhat_histograms, echo=FALSE, message=FALSE, fig.dim=c(12,8)}
+if (!has_sbc_results) {
+  cat("No SBC results found. Skipping R-hat plots.\n")
+} else {
+  plot_data <- imap_dfr(all_results, function(result, model_name) {
+    max_rhat <- require_sbc_diag_column(result, model_name, "default_diagnostics", "max_rhat")
+    data.frame(
+      max_rhat = max_rhat,
+      model_name = model_name
+    )
+  })
+  plot_data <- add_sbc_model_cv_groups(plot_data)
+  p_rhat_hist <- ggplot(plot_data, aes(x = max_rhat)) +
+    geom_histogram(bins = 25, fill = "#2F7F95", alpha = 0.75) +
+    facet_grid(cv_group ~ model_group, scales = "free_y", labeller = paper_cv_labeller) +
+    geom_vline(xintercept = 1.01, linetype = "dashed") +
+    labs(
+      title = "Maximum R-hat across SBC fits",
+      x = "Maximum R-hat",
+      y = "Frequency"
+    ) +
+    paper_theme() +
+    theme(
+      axis.text.x = element_text(size = 11),
+      axis.text.y = element_text(size = 11),
+      strip.text.x = element_text(size = 14, face = "bold"),
+      strip.text.y = element_text(size = 14, face = "bold"),
+      strip.text.y.right = element_text(size = 12, face = "bold")
+    )
+  print(p_rhat_hist)
+  save_manuscript_plot(p_rhat_hist, "paper_sbc_rhat_histograms_cv_only.png", width = 12, height = 6.5)
+  save_sbc_perf_panel_plots(
+    plot_data = plot_data,
+    x_col = "max_rhat",
+    prefix = "paper_sbc_rhat_histograms_panel",
+    x_label = "Maximum R-hat",
+    x_vline = 1.01
+  )
+}
+```
+
+# Maximum chain runtime
+
+```{r paper_sbc_chain_time_histograms, echo=FALSE, message=FALSE, fig.dim=c(12,8)}
+if (!has_sbc_results) {
+  cat("No SBC results found. Skipping chain time plots.\n")
+} else {
+  plot_data <- imap_dfr(all_results, function(result, model_name) {
+    max_chain_time <- require_sbc_diag_column(result, model_name, "backend_diagnostics", "max_chain_time")
+    data.frame(
+      max_chain_time = max_chain_time,
+      model_name = model_name
+    )
+  })
+  plot_data <- add_sbc_model_cv_groups(plot_data)
+  p_chain_hist <- ggplot(plot_data, aes(x = max_chain_time)) +
+    geom_histogram(bins = 25, fill = "#2F7F95", alpha = 0.75) +
+    facet_grid(cv_group ~ model_group, scales = "free_y", labeller = paper_cv_labeller) +
+    labs(
+      title = "Maximum chain runtime across SBC fits",
+      x = "Time (seconds)",
+      y = "Frequency"
+    ) +
+    paper_theme() +
+    theme(
+      axis.text.x = element_text(angle = 35, hjust = 1, size = 11),
+      axis.text.y = element_text(size = 11),
+      strip.text.x = element_text(size = 14, face = "bold"),
+      strip.text.y = element_text(size = 14, face = "bold"),
+      strip.text.y.right = element_text(size = 12, face = "bold")
+    )
+  print(p_chain_hist)
+  save_manuscript_plot(p_chain_hist, "paper_sbc_chain_time_histograms_cv_only.png", width = 12, height = 6.5)
+  save_sbc_perf_panel_plots(
+    plot_data = plot_data,
+    x_col = "max_chain_time",
+    prefix = "paper_sbc_chain_time_histograms_panel",
+    x_label = "Time (seconds)",
+    angle_x = TRUE
+  )
+}
+```
+
+# Simulated values by treedepth-saturation group
+
+```{r paper_sim_values_by_treedepth_group, echo=FALSE, message=FALSE, fig.dim=c(12,8)}
+if (!has_sbc_results) {
+  cat("No SBC results found in ../results. Skipping treedepth subset plots.\n")
+} else {
+  pretty_by_run <- vapply(names(all_results), format_sbc_run_label, character(1))
+  model_key_by_run <- sub("_(cv[^_]+|no)$", "", pretty_by_run)
+  cv_key_by_run <- sub("^.*_(cv[^_]+|no)$", "\\1", pretty_by_run)
+  unique_models <- unique(model_key_by_run)
+  ct_models <- sort(unique(unique_models[grepl("^ct_", unique_models)]))
+  nct_models <- sort(unique(unique_models[grepl("^nct_", unique_models)]))
+  model_order <- c(ct_models, nct_models, setdiff(unique_models, c(ct_models, nct_models)))
+  cv_order <- c("no", "cv0.1", "cv0.3", "cv0.5")
+
+  target_vars <- c("K", "r", "q", "sigma2", "tau2", "Pt[23]")
+  td_subset_plots <- list()
+
+  for (mdl in model_order) {
+    run_names <- names(all_results)[model_key_by_run == mdl]
+    run_names <- run_names[order(match(cv_key_by_run[match(run_names, names(all_results))], cv_order), run_names)]
+    overall_truth_all <- bind_rows(lapply(run_names, function(selected_name) {
+      res <- all_results[[selected_name]]
+      stats_df <- res$stats
+      if (is.null(stats_df) ||
+          !all(c("sim_id", "variable", "simulated_value") %in% names(stats_df))) {
+        return(NULL)
+      }
+      stats_df %>%
+        filter(variable %in% target_vars) %>%
+        group_by(sim_id, variable) %>%
+        summarise(value = first(simulated_value), .groups = "drop") %>%
+        mutate(
+          value = ifelse(variable == "q", log(pmax(value, .Machine$double.eps)), value),
+          cv_group = sub("^.*_(cv[^_]+|no)$", "\\1", format_sbc_run_label(selected_name)),
+          cv_label = cv_group
+        )
+    }))
+    sim_vals_all <- bind_rows(lapply(run_names, function(selected_name) {
+      res <- all_results[[selected_name]]
+      backend <- res$backend_diagnostics
+      stats_df <- res$stats
+      if (is.null(backend) || is.null(stats_df) ||
+          !all(c("sim_id", "n_max_treedepth") %in% names(backend)) ||
+          !all(c("sim_id", "variable", "simulated_value") %in% names(stats_df))) {
+        return(NULL)
+      }
+
+      n_sample <- all_nsamples[[selected_name]]
+      if (is.null(n_sample) || !is.finite(n_sample) || n_sample <= 0) n_sample <- 1
+      td_pct <- (backend$n_max_treedepth / n_sample) * 100
+      sim_low <- sort(unique(backend$sim_id[td_pct < 10]))
+      sim_high <- sort(unique(backend$sim_id[td_pct >= 90]))
+      sim_low <- sim_low[!is.na(sim_low)]
+      sim_high <- sim_high[!is.na(sim_high)]
+      if (length(sim_low) == 0 || length(sim_high) == 0) return(NULL)
+
+      stats_df %>%
+        filter(variable %in% target_vars, sim_id %in% c(sim_low, sim_high)) %>%
+        mutate(
+          value = ifelse(variable == "q", log(pmax(simulated_value, .Machine$double.eps)), simulated_value),
+          td_group = case_when(
+            sim_id %in% sim_low ~ "low_td(<10%)",
+            sim_id %in% sim_high ~ "high_td(>=90%)",
+            TRUE ~ NA_character_
+          ),
+          cv_group = sub("^.*_(cv[^_]+|no)$", "\\1", format_sbc_run_label(selected_name)),
+          cv_label = cv_group
+        ) %>%
+        filter(!is.na(td_group)) %>%
+        group_by(sim_id, variable, td_group, cv_group, cv_label) %>%
+        summarise(value = first(value), .groups = "drop")
+    }))
+    if (is.null(sim_vals_all) || nrow(sim_vals_all) == 0) next
+
+    cv_labels_present <- unique(sim_vals_all[, c("cv_group", "cv_label")])
+    cv_labels_present <- cv_labels_present[order(match(cv_labels_present$cv_group, cv_order), cv_labels_present$cv_group), ]
+    cv_label_map <- setNames(as.character(cv_labels_present$cv_label), as.character(cv_labels_present$cv_group))
+    cv_label_display_map <- setNames(format_cv_label(cv_labels_present$cv_label), as.character(cv_labels_present$cv_label))
+
+    sim_vals_all <- sim_vals_all %>%
+      filter(!(cv_label == "no" & variable == "tau2")) %>%
+      mutate(
+        td_group = factor(td_group, levels = c("low_td(<10%)", "high_td(>=90%)")),
+        cv_label = factor(cv_label, levels = cv_labels_present$cv_label),
+        cv_label_display = factor(
+          cv_label_display_map[as.character(cv_label)],
+          levels = format_cv_label(cv_labels_present$cv_label)
+        ),
+        variable_label = factor(
+          ifelse(
+            variable == "Pt[23]",
+            "P[1989]",
+            ifelse(variable == "q", "log(q)", param_label_parse(variable))
+          ),
+          levels = c("K", "r", "log(q)", "sigma^2", "tau^2", "P[1989]")
+        )
+      )
+    overall_truth_all <- overall_truth_all %>%
+      filter(!(cv_label == "no" & variable == "tau2")) %>%
+      mutate(
+        cv_label = factor(cv_label_map[as.character(cv_label)], levels = cv_labels_present$cv_label),
+        cv_label_display = factor(
+          cv_label_display_map[as.character(cv_label)],
+          levels = format_cv_label(cv_labels_present$cv_label)
+        ),
+        variable_label = factor(
+          ifelse(
+            variable == "Pt[23]",
+            "P[1989]",
+            ifelse(variable == "q", "log(q)", param_label_parse(variable))
+          ),
+          levels = c("K", "r", "log(q)", "sigma^2", "tau^2", "P[1989]")
+        )
+      ) %>%
+      filter(!is.na(cv_label), !is.na(variable_label))
+    td_counts <- sim_vals_all %>%
+      distinct(sim_id, td_group, cv_label) %>%
+      count(cv_label, td_group) %>%
+      tidyr::pivot_wider(names_from = td_group, values_from = n, values_fill = 0) %>%
+      mutate(
+        `low_td(<10%)` = if ("low_td(<10%)" %in% names(.)) `low_td(<10%)` else 0L,
+        `high_td(>=90%)` = if ("high_td(>=90%)" %in% names(.)) `high_td(>=90%)` else 0L
+      )
+
+    valid_cv_labels <- td_counts %>%
+      filter(`low_td(<10%)` > 0, `high_td(>=90%)` > 0) %>%
+      pull(cv_label) %>%
+      as.character() %>%
+      unique()
+    if (length(valid_cv_labels) == 0) next
+
+    sim_vals_all <- sim_vals_all %>%
+      filter(as.character(cv_label) %in% valid_cv_labels) %>%
+      mutate(
+        cv_label = factor(as.character(cv_label), levels = valid_cv_labels),
+        cv_label_display = factor(format_cv_label(as.character(cv_label)), levels = format_cv_label(valid_cv_labels)),
+        variable_label = factor(as.character(variable_label), levels = c("K", "r", "log(q)", "sigma^2", "tau^2", "P[1989]"))
+      )
+    overall_truth_all <- overall_truth_all %>%
+      filter(as.character(cv_label) %in% valid_cv_labels) %>%
+      mutate(
+        cv_label = factor(as.character(cv_label), levels = valid_cv_labels),
+        cv_label_display = factor(format_cv_label(as.character(cv_label)), levels = format_cv_label(valid_cv_labels)),
+        variable_label = factor(as.character(variable_label), levels = c("K", "r", "log(q)", "sigma^2", "tau^2", "P[1989]"))
+      )
+    td_counts <- td_counts %>%
+      filter(as.character(cv_label) %in% valid_cv_labels) %>%
+      mutate(cv_label = factor(as.character(cv_label), levels = valid_cv_labels))
+
+    td_count_note <- td_counts %>%
+      arrange(cv_label) %>%
+      transmute(
+        note = sprintf(
+          "%s: n_low=%d, n_high=%d",
+          format_cv_label(as.character(cv_label)),
+          `low_td(<10%)`,
+          `high_td(>=90%)`
+        )
+      ) %>%
+      pull(note) %>%
+      paste(collapse = "   |   ")
+
+    p_td_subset <- ggplot(sim_vals_all, aes(x = value, y = after_stat(ndensity), fill = td_group)) +
+      geom_histogram(position = "identity", alpha = 0.55, bins = 35) +
+      geom_density(
+        data = overall_truth_all,
+        aes(x = value, y = after_stat(scaled), group = interaction(cv_label_display, variable_label)),
+        inherit.aes = FALSE,
+        colour = "black",
+        linewidth = 0.4,
+        adjust = 1.1
+      ) +
+      facet_grid(
+        cv_label_display ~ variable_label,
+        scales = "free",
+        labeller = labeller(variable_label = label_parsed, cv_label_display = label_value)
+      ) +
+      scale_fill_manual(
+        values = c("low_td(<10%)" = "#1f78b4", "high_td(>=90%)" = "#e31a1c"),
+        name = "Treedepth group"
+      ) +
+      labs(
+        title = gsub("_", " ", mdl, fixed = TRUE),
+        x = "Simulated value",
+        y = "Scaled density",
+        caption = td_count_note
+      ) +
+      paper_theme() +
+      theme(
+        axis.text.x = element_text(size = 11),
+        axis.text.y = element_text(size = 11),
+        axis.title.x = element_text(size = 13),
+        axis.title.y = element_text(size = 13),
+        strip.text.x = element_text(size = 13, face = "bold"),
+        strip.text.y = element_text(size = 12, face = "bold"),
+        legend.title = element_text(size = 13, face = "bold"),
+        legend.text = element_text(size = 12),
+        plot.caption = element_text(hjust = 0, size = 8.5),
+        plot.caption.position = "plot"
+      )
+
+    td_subset_plots[[mdl]] <- p_td_subset
+  }
+
+  if (length(td_subset_plots) == 0) {
+    cat("No models had both subsets: <10% and >=90% treedepth saturation.\n")
+  } else {
+    invisible(lapply(td_subset_plots, print))
+    td_dims <- grid_layout_dims(length(td_subset_plots), panel_w = 7.0, panel_h = 5.0, max_cols = 2, max_h = 20)
+    save_plot_grid(
+      td_subset_plots,
+      filename = "sim_values_by_treedepth_subset.png",
+      ncol = td_dims$ncol,
+      width = td_dims$width,
+      height = td_dims$height
+    )
+    save_plot_list_panels(td_subset_plots, "sim_values_by_treedepth_subset_panel", width = 10.5, height = 7.5)
+  }
+}
+```
+
+# Simulated values by divergence group
+
+```{r paper_sim_values_by_divergence_group, echo=FALSE, message=FALSE, fig.dim=c(12,8)}
+if (!has_sbc_results) {
+  cat("No SBC results found in ../results. Skipping divergence subset plots.\n")
+} else {
+  pretty_by_run <- vapply(names(all_results), format_sbc_run_label, character(1))
+  model_key_by_run <- sub("_(cv[^_]+|no)$", "", pretty_by_run)
+  cv_key_by_run <- sub("^.*_(cv[^_]+|no)$", "\\1", pretty_by_run)
+  unique_models <- unique(model_key_by_run)
+  ct_models <- sort(unique(unique_models[grepl("^ct_", unique_models)]))
+  nct_models <- sort(unique(unique_models[grepl("^nct_", unique_models)]))
+  model_order <- c(ct_models, nct_models, setdiff(unique_models, c(ct_models, nct_models)))
+  cv_order <- c("no", "cv0.1", "cv0.3", "cv0.5")
+
+  target_vars <- c("K", "r", "q", "sigma2", "tau2", "Pt[23]")
+  div_subset_plots <- list()
+
+  for (mdl in model_order) {
+    run_names <- names(all_results)[model_key_by_run == mdl]
+    run_names <- run_names[order(match(cv_key_by_run[match(run_names, names(all_results))], cv_order), run_names)]
+    overall_truth_all <- bind_rows(lapply(run_names, function(selected_name) {
+      res <- all_results[[selected_name]]
+      stats_df <- res$stats
+      if (is.null(stats_df) ||
+          !all(c("sim_id", "variable", "simulated_value") %in% names(stats_df))) {
+        return(NULL)
+      }
+      stats_df %>%
+        filter(variable %in% target_vars) %>%
+        group_by(sim_id, variable) %>%
+        summarise(value = first(simulated_value), .groups = "drop") %>%
+        mutate(
+          value = ifelse(variable == "q", log(pmax(value, .Machine$double.eps)), value),
+          cv_group = sub("^.*_(cv[^_]+|no)$", "\\1", format_sbc_run_label(selected_name)),
+          cv_label = cv_group
+        )
+    }))
+    sim_vals_all <- bind_rows(lapply(run_names, function(selected_name) {
+      res <- all_results[[selected_name]]
+      backend <- res$backend_diagnostics
+      stats_df <- res$stats
+      if (is.null(backend) || is.null(stats_df) ||
+          !all(c("sim_id", "n_divergent") %in% names(backend)) ||
+          !all(c("sim_id", "variable", "simulated_value") %in% names(stats_df))) {
+        return(NULL)
+      }
+
+      sim_no_div <- sort(unique(backend$sim_id[backend$n_divergent == 0]))
+      sim_has_div <- sort(unique(backend$sim_id[backend$n_divergent > 0]))
+      sim_no_div <- sim_no_div[!is.na(sim_no_div)]
+      sim_has_div <- sim_has_div[!is.na(sim_has_div)]
+      if (length(sim_no_div) == 0 || length(sim_has_div) == 0) return(NULL)
+
+      stats_df %>%
+        filter(variable %in% target_vars, sim_id %in% c(sim_no_div, sim_has_div)) %>%
+        mutate(
+          value = ifelse(variable == "q", log(pmax(simulated_value, .Machine$double.eps)), simulated_value),
+          div_group = case_when(
+            sim_id %in% sim_no_div ~ "no_div(=0)",
+            sim_id %in% sim_has_div ~ "has_div(>0)",
+            TRUE ~ NA_character_
+          ),
+          cv_group = sub("^.*_(cv[^_]+|no)$", "\\1", format_sbc_run_label(selected_name)),
+          cv_label = cv_group
+        ) %>%
+        filter(!is.na(div_group)) %>%
+        group_by(sim_id, variable, div_group, cv_group, cv_label) %>%
+        summarise(value = first(value), .groups = "drop")
+    }))
+    if (is.null(sim_vals_all) || nrow(sim_vals_all) == 0) next
+
+    cv_labels_present <- unique(sim_vals_all[, c("cv_group", "cv_label")])
+    cv_labels_present <- cv_labels_present[order(match(cv_labels_present$cv_group, cv_order), cv_labels_present$cv_group), ]
+    cv_label_map <- setNames(as.character(cv_labels_present$cv_label), as.character(cv_labels_present$cv_group))
+    cv_label_display_map <- setNames(format_cv_label(cv_labels_present$cv_label), as.character(cv_labels_present$cv_label))
+
+    sim_vals_all <- sim_vals_all %>%
+      filter(!(cv_label == "no" & variable == "tau2")) %>%
+      mutate(
+        div_group = factor(div_group, levels = c("no_div(=0)", "has_div(>0)")),
+        cv_label = factor(cv_label, levels = cv_labels_present$cv_label),
+        cv_label_display = factor(
+          cv_label_display_map[as.character(cv_label)],
+          levels = format_cv_label(cv_labels_present$cv_label)
+        ),
+        variable_label = factor(
+          ifelse(
+            variable == "Pt[23]",
+            "P[1989]",
+            ifelse(variable == "q", "log(q)", param_label_parse(variable))
+          ),
+          levels = c("K", "r", "log(q)", "sigma^2", "tau^2", "P[1989]")
+        )
+      )
+    overall_truth_all <- overall_truth_all %>%
+      filter(!(cv_label == "no" & variable == "tau2")) %>%
+      mutate(
+        cv_label = factor(cv_label_map[as.character(cv_label)], levels = cv_labels_present$cv_label),
+        cv_label_display = factor(
+          cv_label_display_map[as.character(cv_label)],
+          levels = format_cv_label(cv_labels_present$cv_label)
+        ),
+        variable_label = factor(
+          ifelse(
+            variable == "Pt[23]",
+            "P[1989]",
+            ifelse(variable == "q", "log(q)", param_label_parse(variable))
+          ),
+          levels = c("K", "r", "log(q)", "sigma^2", "tau^2", "P[1989]")
+        )
+      ) %>%
+      filter(!is.na(cv_label), !is.na(variable_label))
+    div_counts <- sim_vals_all %>%
+      distinct(sim_id, div_group, cv_label) %>%
+      count(cv_label, div_group) %>%
+      tidyr::pivot_wider(names_from = div_group, values_from = n, values_fill = 0) %>%
+      mutate(
+        `no_div(=0)` = if ("no_div(=0)" %in% names(.)) `no_div(=0)` else 0L,
+        `has_div(>0)` = if ("has_div(>0)" %in% names(.)) `has_div(>0)` else 0L
+      )
+
+    valid_cv_labels <- div_counts %>%
+      filter(`no_div(=0)` > 0, `has_div(>0)` > 0) %>%
+      pull(cv_label) %>%
+      as.character() %>%
+      unique()
+    if (length(valid_cv_labels) == 0) next
+
+    sim_vals_all <- sim_vals_all %>%
+      filter(as.character(cv_label) %in% valid_cv_labels) %>%
+      mutate(
+        cv_label = factor(as.character(cv_label), levels = valid_cv_labels),
+        cv_label_display = factor(format_cv_label(as.character(cv_label)), levels = format_cv_label(valid_cv_labels)),
+        variable_label = factor(as.character(variable_label), levels = c("K", "r", "log(q)", "sigma^2", "tau^2", "P[1989]"))
+      )
+    overall_truth_all <- overall_truth_all %>%
+      filter(as.character(cv_label) %in% valid_cv_labels) %>%
+      mutate(
+        cv_label = factor(as.character(cv_label), levels = valid_cv_labels),
+        cv_label_display = factor(format_cv_label(as.character(cv_label)), levels = format_cv_label(valid_cv_labels)),
+        variable_label = factor(as.character(variable_label), levels = c("K", "r", "log(q)", "sigma^2", "tau^2", "P[1989]"))
+      )
+    div_counts <- div_counts %>%
+      filter(as.character(cv_label) %in% valid_cv_labels) %>%
+      mutate(cv_label = factor(as.character(cv_label), levels = valid_cv_labels))
+
+    count_note <- div_counts %>%
+      arrange(cv_label) %>%
+      transmute(
+        note = sprintf(
+          "%s: n0=%d, n+=%d",
+          format_cv_label(as.character(cv_label)),
+          `no_div(=0)`,
+          `has_div(>0)`
+        )
+      ) %>%
+      pull(note) %>%
+      paste(collapse = "   |   ")
+
+    p_div_subset <- ggplot(sim_vals_all, aes(x = value, y = after_stat(ndensity), fill = div_group)) +
+      geom_histogram(position = "identity", alpha = 0.55, bins = 35) +
+      geom_density(
+        data = overall_truth_all,
+        aes(x = value, y = after_stat(scaled), group = interaction(cv_label_display, variable_label)),
+        inherit.aes = FALSE,
+        colour = "black",
+        linewidth = 0.4,
+        adjust = 1.1
+      ) +
+      facet_grid(
+        cv_label_display ~ variable_label,
+        scales = "free",
+        labeller = labeller(variable_label = label_parsed, cv_label_display = label_value)
+      ) +
+      scale_fill_manual(
+        values = c("no_div(=0)" = "#1f78b4", "has_div(>0)" = "#e31a1c"),
+        name = "Divergence group"
+      ) +
+      labs(
+        title = gsub("_", " ", mdl, fixed = TRUE),
+        x = "Simulated value",
+        y = "Scaled density",
+        caption = count_note
+      ) +
+      paper_theme() +
+      theme(
+        axis.text.x = element_text(size = 11),
+        axis.text.y = element_text(size = 11),
+        axis.title.x = element_text(size = 13),
+        axis.title.y = element_text(size = 13),
+        strip.text.x = element_text(size = 13, face = "bold"),
+        strip.text.y = element_text(size = 12, face = "bold"),
+        legend.title = element_text(size = 13, face = "bold"),
+        legend.text = element_text(size = 12),
+        plot.caption = element_text(hjust = 0, size = 8.5),
+        plot.caption.position = "plot"
+      )
+
+    div_subset_plots[[mdl]] <- p_div_subset
+  }
+
+  if (length(div_subset_plots) == 0) {
+    cat("No models had both divergence subsets: =0 and >0.\n")
+  } else {
+    invisible(lapply(div_subset_plots, print))
+    div_dims <- grid_layout_dims(length(div_subset_plots), panel_w = 7.0, panel_h = 5.0, max_cols = 2, max_h = 20)
+    save_plot_grid(
+      div_subset_plots,
+      filename = "sim_values_by_divergence_subset.png",
+      ncol = div_dims$ncol,
+      width = div_dims$width,
+      height = div_dims$height
+    )
+    save_plot_list_panels(div_subset_plots, "sim_values_by_divergence_subset_panel", width = 10.5, height = 7.5)
+  }
+}
+```
