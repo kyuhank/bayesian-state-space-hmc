@@ -3,7 +3,6 @@
 .RData
 .Ruserdata
 .vscode/
-figures_generated/
 fitcsv/
 results/results_manifest.rds
 models/ct_fmax

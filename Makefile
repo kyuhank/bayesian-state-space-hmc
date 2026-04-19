@@ -9,8 +9,6 @@ help:
 	@printf "  make sbc                    Run the SBC analysis grid (setup.R)\n"
 	@printf "  make prior-only             Run the prior-only analysis\n"
 	@printf "  make sensitivity-softmax    Run the four-model fmax/softmax sensitivity analysis\n"
-	@printf "  make sensitivity-figures    Export the manuscript-style sensitivity figures from saved results\n"
-	@printf "  make sensitivity-trajectory Export the sensitivity trajectory boxplot after sensitivity-softmax\n"
 	@printf "  make smoke-local            Run a reduced local smoke test\n"
 	@printf "  make rerun-all              Run SBC and prior-only analyses, then rebuild the manifest\n\n"
 	@printf "  make docker-pull            Pull the Docker image used for reproducible runs\n"
@@ -35,12 +33,6 @@ run-prior-only:
 sensitivity-softmax:
 	bash scripts/run_prior_only_fmax_softmax_sensitivity.sh
 
-sensitivity-figures:
-	Rscript scripts/export_prior_only_sensitivity_figures.R
-
-sensitivity-trajectory:
-	Rscript scripts/export_prior_only_sensitivity_trajectory_boxplot.R
-
 smoke-local:
 	bash scripts/smoke_local.sh
 
@@ -64,4 +56,4 @@ docker-prior-only:
 docker-rerun-all:
 	docker run --rm -v "$(CURDIR):$(DOCKER_WORKDIR)" -w $(DOCKER_WORKDIR) $(DOCKER_IMAGE) make rerun-all
 
-.PHONY: help collect-results sbc run-sbc prior-only run-prior-only sensitivity-softmax sensitivity-figures sensitivity-trajectory smoke-local rerun-all docker-pull docker-shell docker-sbc docker-prior-only docker-rerun-all
+.PHONY: help collect-results sbc run-sbc prior-only run-prior-only sensitivity-softmax smoke-local rerun-all docker-pull docker-shell docker-sbc docker-prior-only docker-rerun-all

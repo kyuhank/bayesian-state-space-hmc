@@ -17,7 +17,7 @@ This repository does **not** include the manuscript source files.
 - `data/`: input data objects
 - `models/`: Stan model files
 - `results/`: saved outputs used in the study
-- `scripts/`: helper scripts for manifests and sensitivity exports
+- `scripts/`: helper scripts for manifests and sensitivity analyses
 - `utils/`: shared helper functions
 
 ## Quick start
@@ -41,10 +41,6 @@ The saved results are included, and the main analyses can also be rerun from cod
   - Run the prior-only analysis.
 - `make sensitivity-softmax`
   - Run the four-model `fmax` versus `softmax` sensitivity analysis.
-- `make sensitivity-figures`
-  - Export the manuscript-style sensitivity figures from the saved four-model bundle.
-- `make sensitivity-trajectory`
-  - Export the sensitivity trajectory boxplot after `make sensitivity-softmax`.
 - `make smoke-local`
   - Run a reduced local smoke test.
 - `make rerun-all`
