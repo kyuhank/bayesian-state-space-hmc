@@ -1,4 +1,4 @@
-// priorSBC / centered / hard-fmax biomass floor
+// SBC / centered / hard-fmax biomass floor
 // Constraint type:
 //   PtMedian[t] = fmax(raw_update, 1e-4)
 // Notes:

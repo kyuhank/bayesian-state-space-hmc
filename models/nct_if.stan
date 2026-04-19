@@ -1,4 +1,4 @@
-// priorSBC / non-centered / hard-if catch constraint
+// SBC / non-centered / hard-if catch constraint
 // Constraint type:
 //   PredCt[t] = Ct[t] unless Ct exceeds feasible harvest, then clipped to 0.99 * K * PtMedTemp
 // Notes:
@@ -115,4 +115,3 @@ generated quantities {
     loglik += normal_lpdf(log(It[t]) | log(q * Bt[t]), tau);
   }
 }
-

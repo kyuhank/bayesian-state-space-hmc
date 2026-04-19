@@ -1,4 +1,4 @@
-// priorSBC / centered / differentiable soft constraints
+// SBC / centered / differentiable soft constraints
 // Constraint type:
 //   1) Soft-min for effective catch on log scale via log_sum_exp
 //   2) Softplus floor for next biomass median

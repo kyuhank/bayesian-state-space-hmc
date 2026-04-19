@@ -1,4 +1,4 @@
-// priorSBC / non-centered / soft biomass floor + soft harvest-rate penalty
+// SBC / non-centered / soft biomass floor + soft harvest-rate penalty
 // Design intent:
 //   - Use observed catch Ct directly (no PredCt reconstruction).
 //   - Prevent negative/near-zero biomass with a differentiable soft floor.

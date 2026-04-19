@@ -1,4 +1,4 @@
-// priorSBC / non-centered / smooth softplus biomass floor
+// SBC / non-centered / smooth softplus biomass floor
 // Constraint type:
 //   PtMedian[t] = softplus(raw_update) + 1e-4
 // Notes:
