@@ -6,6 +6,16 @@
 figures_generated/
 fitcsv/
 results/results_manifest.rds
+models/ct_fmax
+models/ct_if
+models/ct_soft
+models/ct_soft2
+models/ct_softmax
+models/nct_fmax
+models/nct_if
+models/nct_soft
+models/nct_soft2
+models/nct_softmax
 *.o
 *.so
 *.dll

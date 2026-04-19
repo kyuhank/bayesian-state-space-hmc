@@ -42,9 +42,9 @@ The saved results are included, and the main analyses can also be rerun from cod
 - `make sensitivity-softmax`
   - Run the four-model `fmax` versus `softmax` sensitivity analysis.
 - `make sensitivity-figures`
-  - Export the manuscript-style sensitivity figures.
+  - Export the manuscript-style sensitivity figures from the saved four-model bundle.
 - `make sensitivity-trajectory`
-  - Export the sensitivity trajectory boxplot.
+  - Export the sensitivity trajectory boxplot after `make sensitivity-softmax`.
 - `make smoke-local`
   - Run a reduced local smoke test.
 - `make rerun-all`

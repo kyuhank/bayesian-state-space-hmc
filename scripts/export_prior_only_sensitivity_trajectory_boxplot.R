@@ -26,7 +26,12 @@ model_palette <- c(
 
 latest_stem <- function(model_name) {
   csvs <- list.files(file.path("fitcsv", model_name), pattern = "\\.csv$", full.names = TRUE)
-  if (length(csvs) == 0) stop("No CSV files found for ", model_name)
+  if (length(csvs) == 0) {
+    stop(
+      "No CSV files found for ", model_name,
+      ". Run `make sensitivity-softmax` first to generate the required fitcsv output."
+    )
+  }
   stems <- sub("-[0-9]+-[0-9]+\\.csv$", "", basename(csvs))
   info <- file.info(csvs)
   stems[order(info$mtime, decreasing = TRUE)][1]
