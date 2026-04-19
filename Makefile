@@ -7,10 +7,9 @@ help:
 	@printf "\nSurplus-SBC-repro targets\n\n"
 	@printf "  make                        Run the full paper workflow sequentially\n"
 	@printf "  make collect-results        Build results/results_manifest.rds from saved SBC outputs\n"
-	@printf "  make sbc                    Run the SBC analysis grid (setup.R)\n"
-	@printf "  make prior-only             Run the prior-only analysis\n"
+	@printf "  make sbc                    Run the full SBC grid used in the study\n"
+	@printf "  make prior-only             Run the main eight-model prior-only comparison\n"
 	@printf "  make sensitivity-softmax    Run the four-model fmax/softmax sensitivity analysis\n"
-	@printf "  make smoke-local            Run a reduced local smoke test\n"
 	@printf "  make rerun-all              Run all paper analyses, then rebuild the manifest\n\n"
 	@printf "  make docker-pull            Pull the Docker image used for reproducible runs\n"
 	@printf "  make docker-shell           Open an interactive shell in the Docker image\n"
@@ -24,12 +23,12 @@ collect-results:
 sbc: run-sbc
 
 run-sbc:
-	Rscript setup.R
+	bash scripts/run_sbc_grid.sh
 
 prior-only: run-prior-only
 
 run-prior-only:
-	Rscript analysis/PriorOnly.R
+	bash scripts/run_prior_only_main.sh
 
 sensitivity-softmax:
 	bash scripts/run_prior_only_fmax_softmax_sensitivity.sh

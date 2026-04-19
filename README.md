@@ -42,13 +42,12 @@ The default `make` target runs the full paper workflow sequentially. This can ta
 - `make collect-results`
   - Rebuild `results/results_manifest.rds` from the saved SBC outputs.
 - `make sbc`
-  - Run the SBC analysis grid via `setup.R`.
+  - Run the full SBC grid used in the study:
+    eight main models under `no`, `0.1`, `0.3`, and `0.5`.
 - `make prior-only`
-  - Run the prior-only analysis.
+  - Run the independent prior-only comparison for the main eight models.
 - `make sensitivity-softmax`
   - Run the four-model `fmax` versus `softmax` sensitivity analysis.
-- `make smoke-local`
-  - Run a reduced local smoke test.
 - `make rerun-all`
   - Run all paper analyses, then rebuild the results manifest.
 
