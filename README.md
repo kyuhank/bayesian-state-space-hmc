@@ -1,4 +1,4 @@
-# Stock assessment HMC reproducibility code
+# Reproducibility code for a Bayesian state-space surplus model fitted with HMC
 
 This repository is provided to support transparency of the methods used in the study and to give other analysts a reproducible code base that can be inspected, rerun, and adapted. It accompanies the article *Parameterisation and feasibility treatment in a Bayesian stock assessment model fitted with Hamiltonian Monte Carlo*.
 
