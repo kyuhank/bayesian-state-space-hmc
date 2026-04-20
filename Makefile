@@ -4,7 +4,7 @@ DOCKER_IMAGE ?= ghcr.io/pacificcommunity/bayes:v1.5
 DOCKER_WORKDIR ?= /work
 
 help:
-	@printf "\nSurplus-SBC-repro targets\n\n"
+	@printf "\nbayesian-state-space-hmc targets\n\n"
 	@printf "  make                        Run the full paper workflow sequentially\n"
 	@printf "  make collect-results        Build results/results_manifest.rds from saved SBC outputs\n"
 	@printf "  make sbc                    Run the full SBC grid used in the study\n"
