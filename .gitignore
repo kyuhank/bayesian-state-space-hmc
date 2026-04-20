@@ -19,3 +19,4 @@ models/nct_softmax
 *.so
 *.dll
 *.pdf
+*.Rproj
