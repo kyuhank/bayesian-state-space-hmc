@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use this repository, please cite the software and the associated article."
-title: "Reproducibility code for a Bayesian state-space surplus model fitted with HMC"
+title: "Reproducibility code for a Bayesian state-space surplus model fitted with HMC in Stan"
 type: software
 version: "0.1.0"
 date-released: 2026-04-20
@@ -12,8 +12,8 @@ authors:
     affiliation: "Pacific Community"
 abstract: >-
   Reproducibility repository for a study of parameterisation and feasibility
-  treatment in a Bayesian surplus production model fitted with Hamiltonian
-  Monte Carlo.
+  treatment in a Bayesian surplus production model fitted in Stan with
+  Hamiltonian Monte Carlo.
 keywords:
   - fisheries stock assessment
   - state-space model
