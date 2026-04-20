@@ -1,16 +1,11 @@
 ## ============================================================
 ## Prior-only model comparison:
-## - Fit all Stan models in the model directory
+## - Fit the selected Stan models
 ## - Simulate prior-predictive "truth" via SimData()
-## - Ridge-style densities for Pt[21:23] by model
-## - Posterior density: filled (model colour)
-## - Truth density: red outline
-## - Highlight ONLY the area where posterior and truth densities differ (shaded)
+## - Save posterior draws and truth draws for the quantities used
+##   in the study under results/prior_only/
 ##
-## Notes:
-## - Difference shading uses densities computed on a common grid.
-## - Each (model, param) density is normalised to max=1 so ridge heights are comparable.
-## - Lines are omitted (no posterior line, no baseline line); only fills are shown.
+## This reproducibility repository does not rebuild manuscript figures.
 ## ============================================================
 
 source("utils/simulation.R")
@@ -20,11 +15,6 @@ source("utils/pipeline_utils.R")
 library(here)
 library(cmdstanr)
 library(posterior)
-library(ggplot2)
-library(dplyr)
-library(tidyr)
-library(purrr)
-library(ggridges)
 
 env_int <- function(name, default) {
   x <- Sys.getenv(name, "")
@@ -101,7 +91,6 @@ seed       <- env_int("PRIORONLY_SEED", 123)
 n_draws <- env_int("PRIORONLY_N_DRAWS",2000000)
 n_sims  <- env_int("PRIORONLY_N_SIMS", 60000)
 save_plot_data <- tolower(env_get_chr("PRIORONLY_SAVE_PLOT_DATA", "true")) %in% c("1", "true", "yes", "y")
-skip_plots <- tolower(env_get_chr("PRIORONLY_SKIP_PLOTS", "false")) %in% c("1", "true", "yes", "y")
 
 if (!is.na(n_draws) && !is.na(n_sims) && n_draws < n_sims) {
   warning(
@@ -305,140 +294,4 @@ if (save_plot_data) {
   cat("Saved prior-only plot data:", out_file, "\n")
 }
 
-## -----------------------------
-## 7) Ordering for facets and ridge stacking
-## -----------------------------
-param_levels <- intersect(plot_param_priority, unique(as.character(post_long$param)))
-post_long$param <- factor(post_long$param, levels = rev(param_levels))
-sim_long$param  <- factor(sim_long$param,  levels = rev(param_levels))
-
-ct_models   <- models[grepl("^ct",  models)]
-nct_models  <- models[grepl("^nct", models)]
-model_order <- c(ct_models, nct_models)
-
-post_long$model <- factor(post_long$model, levels = model_order)
-sim_long$model  <- factor(sim_long$model,  levels = model_order)
-
-ncol_facets <- max(length(ct_models), length(nct_models))
-
-plot_dir <- file.path("plot", "PriorOnly")
-dir.create(plot_dir, recursive = TRUE, showWarnings = FALSE)
-
-if (skip_plots) {
-  cat("Skipping plot generation because PRIORONLY_SKIP_PLOTS is enabled.\n")
-  quit(save = "no", status = 0)
-}
-
-## -----------------------------
-## 8) Build densities on a common grid (join-by-idx) + normalise (max=1)
-## -----------------------------
-xgrid <- seq(0, 1, length.out = 512)
-
-dens_long <- function(df, out_col) {
-  do.call(rbind, lapply(split(df, list(df$model, df$param), drop = TRUE), function(dd) {
-    if (nrow(dd) == 0) return(NULL)
-    d <- density(dd$value, from = 0, to = 1, n = length(xgrid), na.rm = TRUE)
-    
-    out <- data.frame(
-      model = as.character(dd$model[1]),
-      param = as.character(dd$param[1]),
-      idx   = seq_along(d$x),
-      x     = d$x,
-      dens  = d$y
-    )
-    names(out)[names(out) == "dens"] <- out_col
-    out
-  }))
-}
-
-post_den  <- dens_long(post_long, "dens_post")
-truth_den <- dens_long(sim_long,  "dens_truth")
-
-den_df <- left_join(
-  post_den,
-  truth_den %>% select(model, param, idx, dens_truth),
-  by = c("model", "param", "idx")
-)
-
-den_df$dens_post  <- ifelse(is.na(den_df$dens_post),  0, den_df$dens_post)
-den_df$dens_truth <- ifelse(is.na(den_df$dens_truth), 0, den_df$dens_truth)
-
-den_df <- den_df %>%
-  mutate(
-    param = factor(param, levels = levels(post_long$param)),
-    model = factor(model, levels = model_order),
-    y0    = as.numeric(param)
-  ) %>%
-  group_by(model, param) %>%
-  mutate(
-    dens_post_s  = dens_post  / max(dens_post,  na.rm = TRUE),
-    dens_truth_s = dens_truth / max(dens_truth, na.rm = TRUE)
-  ) %>%
-  ungroup()
-
-## -----------------------------
-## 9) Convert densities to ridge coordinates and define the difference band
-## -----------------------------
-scale_ridge <- 0.85
-
-den_df <- den_df %>%
-  mutate(
-    y_post  = y0 + scale_ridge * dens_post_s,
-    y_truth = y0 + scale_ridge * dens_truth_s,
-    ymin = pmin(y_post, y_truth),
-    ymax = pmax(y_post, y_truth)
-  )
-
-## -----------------------------
-## 10) Plot: posterior fill + truth outline + shaded difference only
-## -----------------------------
-p_highlight <- ggplot() +
-  ## Posterior density (filled)
-  geom_ribbon(
-    data = den_df,
-    aes(x = x, ymin = y0, ymax = y_post, fill = model, group = interaction(model, param)),
-    alpha = 0.45,
-    colour = NA
-  ) +
-  ## Difference band between posterior and truth densities (shaded)
-  geom_ribbon(
-    data = den_df,
-    aes(x = x, ymin = ymin, ymax = ymax, group = interaction(model, param)),
-    fill = "grey30",
-    alpha = 0.90
-  ) +
-  ## Truth density (red outline)
-  geom_line(
-    data = den_df,
-    aes(x = x, y = y_truth, group = interaction(model, param)),
-    colour = "red",
-    linewidth = 0.5
-  ) +
-  facet_wrap(~ model, nrow = 2, ncol = ncol_facets) +
-  scale_y_continuous(
-    breaks = seq_along(levels(post_long$param)),
-    labels = levels(post_long$param),
-    expand = expansion(mult = c(0.02, 0.05))
-  ) +
-  coord_cartesian(xlim = c(0, 1)) +
-  labs(
-    x     = "Value",
-    y     = NULL,
-    fill  = "Model",
-    title = "Prior-only: posterior (filled) vs truth (red), shaded = difference (normalised densities)"
-  ) +
-  theme_bw()
-
-print(p_highlight)
-
-ggsave(
-  filename = file.path(plot_dir, "ridge_pt21_23_shaded_difference_norm_nolines.png"),
-  plot     = p_highlight,
-  width    = 12,
-  height   = 7,
-  dpi      = 300
-)
-
-cat("\nSaved shaded ridge plot to: ",
-    file.path(plot_dir, "ridge_pt21_23_shaded_difference_norm_nolines.png"),
-    "\n", sep = "")
+quit(save = "no", status = 0)
