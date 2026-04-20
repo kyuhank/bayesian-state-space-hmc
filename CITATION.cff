@@ -20,4 +20,4 @@ keywords:
   - surplus production model
   - Hamiltonian Monte Carlo
   - simulation-based calibration
-repository-code: "https://github.com/kyuhank/bayesian-state-space-hmc-repro"
+repository-code: "https://github.com/kyuhank/bayesian-state-space-hmc"
