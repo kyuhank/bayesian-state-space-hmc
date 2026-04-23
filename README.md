@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/1215416750.svg)](https://doi.org/10.5281/zenodo.19702282)
+
 # Reproducibility code for a Bayesian state-space surplus model fitted with HMC in Stan
 
 This repository is provided to support transparency of the methods used in the study and to give other analysts a reproducible code base that can be inspected, rerun, and adapted. It accompanies the article *Parameterisation and feasibility treatment in a Bayesian stock assessment model fitted with Hamiltonian Monte Carlo*.
